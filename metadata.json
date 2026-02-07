@@ -1,0 +1,8 @@
+{
+  "name": "Gaadi Dost",
+  "description": "A comprehensive fleet management and emergency response platform connecting drivers, mechanics, and admins using AI and Realtime tracking.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
