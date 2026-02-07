@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../services/auth.service';
 import { SupabaseService, Vehicle } from '../services/supabase.service';
@@ -9,8 +9,37 @@ import { MapComponent } from './map.component';
   standalone: true,
   imports: [CommonModule, MapComponent],
   template: `
-    <div class="min-h-screen bg-slate-100">
-      <nav class="bg-slate-900 text-white p-4 shadow-lg sticky top-0 z-50">
+    <div class="min-h-screen bg-slate-100 relative">
+      <!-- Toast Notifications Container -->
+      <div class="fixed top-20 right-4 z-50 flex flex-col gap-3 pointer-events-none max-w-sm w-full">
+        @for (toast of toasts(); track toast.id) {
+          <div class="bg-white rounded-xl shadow-xl border-l-4 p-4 pointer-events-auto animate-slide-in flex items-start gap-3 backdrop-blur-sm bg-opacity-95"
+               [class.border-red-500]="toast.type === 'danger'"
+               [class.border-yellow-500]="toast.type === 'warning'">
+             <div class="p-2 rounded-full shrink-0" 
+                  [class.bg-red-100]="toast.type === 'danger'" 
+                  [class.bg-yellow-100]="toast.type === 'warning'">
+               <span class="material-icons text-sm" 
+                     [class.text-red-600]="toast.type === 'danger'" 
+                     [class.text-yellow-600]="toast.type === 'warning'">
+                 {{toast.type === 'danger' ? 'priority_high' : 'warning'}}
+               </span>
+             </div>
+             <div class="flex-1">
+               <h4 class="font-bold text-gray-800 text-sm flex justify-between">
+                 {{toast.title}}
+                 <span class="text-[10px] text-gray-400 font-normal">Just now</span>
+               </h4>
+               <p class="text-xs text-gray-600 mt-0.5 leading-snug">{{toast.msg}}</p>
+             </div>
+             <button (click)="removeToast(toast.id)" class="text-gray-400 hover:text-gray-600 transition">
+               <span class="material-icons text-sm">close</span>
+             </button>
+          </div>
+        }
+      </div>
+
+      <nav class="bg-slate-900 text-white p-4 shadow-lg sticky top-0 z-40">
         <div class="container mx-auto flex justify-between items-center">
           <div class="flex items-center gap-3">
              <div class="bg-blue-500 p-2 rounded-lg">
@@ -106,8 +135,28 @@ import { MapComponent } from './map.component';
                           {{em.status}}
                         </span>
                      </div>
-                     <p class="text-sm text-gray-600 mb-2">{{em.location}}</p>
-                     <div class="text-xs text-gray-400">{{em.created_at | date:'mediumTime'}}</div>
+                     <p class="text-sm text-gray-600 mb-1 flex items-center gap-1">
+                        <span class="material-icons text-xs text-gray-400">location_on</span>
+                        {{em.location}}
+                     </p>
+                     
+                     <!-- Extended Info: Vehicle & Mechanic -->
+                     <div class="flex justify-between items-center text-xs text-gray-500 mt-2 bg-slate-50 p-2 rounded">
+                        <div class="flex items-center gap-1">
+                            <span class="material-icons text-xs">directions_car</span>
+                            <span class="font-semibold">{{em.vehicle_reg || 'N/A'}}</span>
+                        </div>
+                        @if(em.assigned_mechanic) {
+                            <div class="flex items-center gap-1 text-blue-600">
+                                <span class="material-icons text-xs">person</span>
+                                <span class="font-semibold">{{em.assigned_mechanic}}</span>
+                            </div>
+                        } @else {
+                            <span class="italic text-gray-400">Unassigned</span>
+                        }
+                     </div>
+
+                     <div class="text-xs text-gray-400 mt-2 text-right">{{em.created_at | date:'mediumTime'}}</div>
                    </div>
                  }
               </div>
@@ -226,6 +275,9 @@ import { MapComponent } from './map.component';
   styles: [`
     @keyframes fade-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
     .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+    
+    @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .animate-slide-in { animation: slide-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
   `]
 })
 export class AdminDashboardComponent implements OnInit {
@@ -242,6 +294,10 @@ export class AdminDashboardComponent implements OnInit {
   // Computed Views
   pendingBookings = computed(() => this.bookings().filter(b => b.status === 'pending' || b.status === 'negotiating'));
   activeEmergencies = computed(() => this.emergencies().filter(e => e.status !== 'completed'));
+
+  // Notification State
+  toasts = signal<{id: string, title: string, msg: string, type: 'warning'|'danger'}[]>([]);
+  private notifiedAlertIds = new Set<string>();
 
   // Computed Alerts from Vehicles
   vehicleAlerts = computed(() => {
@@ -278,7 +334,29 @@ export class AdminDashboardComponent implements OnInit {
     return list;
   });
 
-  constructor() {}
+  constructor() {
+    // Alert Monitoring Effect
+    effect(() => {
+      const currentAlerts = this.vehicleAlerts();
+      
+      // 1. Trigger notifications for NEW alerts
+      currentAlerts.forEach(alert => {
+        if (!this.notifiedAlertIds.has(alert.id)) {
+           this.showNotification(alert);
+           this.notifiedAlertIds.add(alert.id);
+        }
+      });
+      
+      // 2. Clear tracking for alerts that have been resolved
+      // This allows the notification to trigger again if the issue re-occurs later
+      const currentIds = new Set(currentAlerts.map(a => a.id));
+      this.notifiedAlertIds.forEach(id => {
+        if (!currentIds.has(id)) {
+          this.notifiedAlertIds.delete(id);
+        }
+      });
+    });
+  }
 
   ngOnInit() {
     this.refresh();
@@ -296,14 +374,44 @@ export class AdminDashboardComponent implements OnInit {
     setInterval(() => this.refresh(), 2000);
   }
 
+  showNotification(alert: any) {
+    const type = alert.type === 'Overspeeding' ? 'danger' : 'warning';
+    
+    const newToast = {
+      id: crypto.randomUUID(),
+      title: alert.type,
+      msg: `${alert.reg} is reporting ${alert.val}`,
+      type: type as 'warning'|'danger'
+    };
+    
+    this.toasts.update(prev => [newToast, ...prev]); // Add to top
+    
+    // Auto dismiss
+    setTimeout(() => {
+      this.removeToast(newToast.id);
+    }, 6000);
+    
+    // Sound Alert for Danger (Overspeeding)
+    if (type === 'danger') {
+       this.playAlertSound();
+    }
+  }
+
+  removeToast(id: string) {
+    this.toasts.update(prev => prev.filter(t => t.id !== id));
+  }
+
+  playAlertSound() {
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    audio.volume = 0.5;
+    audio.play().catch(() => {});
+  }
+
   async refresh() {
     const data = await this.supabase.getVehicles();
     this.vehicles.set(data);
     
     // Update Map Markers 
-    // - Vehicles (Blue or Red if alert)
-    // - Emergencies (Red with ! icon logic handled by MapComponent type)
-    
     const markers = [];
     
     // Add Vehicles
@@ -313,7 +421,7 @@ export class AdminDashboardComponent implements OnInit {
         lat: v.lat,
         lng: v.lng,
         title: `${v.registration_number} (${v.speed.toFixed(0)} km/h)`,
-        type: hasAlert ? 'emergency' : 'vehicle' // Re-using 'emergency' type color for vehicle alerts
+        type: hasAlert ? 'emergency' : 'vehicle'
       });
     });
 

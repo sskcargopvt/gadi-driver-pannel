@@ -60,4 +60,33 @@ export class AiService {
       return "AI Assessment unavailable.";
     }
   }
+
+  async diagnoseIssue(symptoms: string) {
+    if (!symptoms) return null;
+    try {
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `I am a mechanic. The car has these symptoms: "${symptoms}". 
+                   Provide a list of 3 probable causes and 1 recommended quick fix.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              causes: { type: Type.ARRAY, items: { type: Type.STRING } },
+              recommendation: { type: Type.STRING },
+              urgency: { type: Type.STRING }
+            }
+          }
+        }
+      });
+      return JSON.parse(response.text);
+    } catch (e) {
+      return {
+        causes: ['Battery Dead', 'Alternator Failure', 'Loose Wiring'],
+        recommendation: 'Check voltage with multimeter.',
+        urgency: 'Medium'
+      };
+    }
+  }
 }

@@ -29,6 +29,11 @@ export interface EmergencyRequest {
   lng: number;
   amount: number;
   created_at: string;
+  // Added for mechanic chat
+  messages: {sender: 'mechanic'|'driver', text: string, time: Date | string}[];
+  // Extended details
+  vehicle_reg?: string;
+  assigned_mechanic?: string;
 }
 
 export interface BookingRequest {
@@ -67,6 +72,7 @@ export interface Load {
 })
 export class SupabaseService {
   private supabase: SupabaseClient;
+  private simulationInterval: any;
   
   // Mock data stores for demo fallback
   private mockVehicles = signal<Vehicle[]>([
@@ -108,7 +114,9 @@ export class SupabaseService {
       lat: 12.9800,
       lng: 77.6000,
       amount: 1500,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      messages: [],
+      vehicle_reg: 'KA-01-HH-1234'
     }
   ]);
 
@@ -160,8 +168,12 @@ export class SupabaseService {
       const { data, error } = await this.supabase.from('emergency_requests').select('*');
       if (error || !data) throw error;
       if (data.length > 0) {
-        this.mockEmergencies.set(data as EmergencyRequest[]);
-        return data as EmergencyRequest[];
+        const mappedData = data.map((e: any) => ({
+           ...e,
+           messages: e.messages || []
+        }));
+        this.mockEmergencies.set(mappedData as EmergencyRequest[]);
+        return mappedData as EmergencyRequest[];
       }
     } catch (e) {}
     return this.mockEmergencies();
@@ -221,20 +233,57 @@ export class SupabaseService {
       lat: req.lat || 0,
       lng: req.lng || 0,
       amount: req.amount || 0,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      messages: [],
+      vehicle_reg: req.vehicle_reg || 'Unknown'
     };
     this.mockEmergencies.update(prev => [...prev, newEmergency]);
     try { await this.supabase.from('emergency_requests').insert(newEmergency); } catch (e) {}
   }
 
-  async updateEmergencyStatus(id: string, status: string, eta?: number) {
+  async updateEmergencyStatus(id: string, status: string, eta?: number, mechanicName?: string) {
     this.mockEmergencies.update(prev => 
-      prev.map(e => e.id === id ? { ...e, status: status as any, eta: eta ?? e.eta } : e)
+      prev.map(e => {
+        if (e.id === id) {
+          const updated = { ...e, status: status as any };
+          if (eta !== undefined) updated.eta = eta;
+          if (mechanicName !== undefined) updated.assigned_mechanic = mechanicName;
+          return updated;
+        }
+        return e;
+      })
     );
     try { 
       const updates: any = { status };
       if (eta !== undefined) updates.eta = eta;
+      if (mechanicName !== undefined) updates.assigned_mechanic = mechanicName;
       await this.supabase.from('emergency_requests').update(updates).eq('id', id); 
+    } catch (e) {}
+  }
+
+  async sendEmergencyMessage(reqId: string, text: string) {
+    const newMessage = { sender: 'mechanic' as const, text, time: new Date() };
+    let currentMessages: any[] = [];
+    
+    // Optimistic Update
+    const currentReq = this.mockEmergencies().find(e => e.id === reqId);
+    if(currentReq) {
+        currentMessages = [...currentReq.messages, newMessage];
+    }
+    
+    this.mockEmergencies.update(prev => prev.map(e => {
+        if(e.id === reqId) {
+            return { ...e, messages: currentMessages };
+        }
+        return e;
+    }));
+    
+    // Real Update
+    try {
+        const { data } = await this.supabase.from('emergency_requests').select('messages').eq('id', reqId).single();
+        const existingMsgs = data?.messages || [];
+        const updatedMsgs = [...existingMsgs, newMessage];
+        await this.supabase.from('emergency_requests').update({ messages: updatedMsgs }).eq('id', reqId);
     } catch (e) {}
   }
 
@@ -364,7 +413,10 @@ export class SupabaseService {
             lat: newRecord.lat || 0,
             lng: newRecord.lng || 0,
             amount: newRecord.amount || 0,
-            created_at: newRecord.created_at || new Date().toISOString()
+            created_at: newRecord.created_at || new Date().toISOString(),
+            messages: newRecord.messages || [],
+            vehicle_reg: newRecord.vehicle_reg || 'Unknown',
+            assigned_mechanic: newRecord.assigned_mechanic
           };
           this.mockEmergencies.update(prev => {
              if(prev.find(e => e.id === newEmergency.id)) return prev;
@@ -372,7 +424,7 @@ export class SupabaseService {
           });
         } else if (payload.eventType === 'UPDATE') {
            this.mockEmergencies.update(prev => prev.map(e => 
-             e.id === newRecord.id ? { ...e, ...newRecord } : e
+             e.id === newRecord.id ? { ...e, ...newRecord, messages: newRecord.messages || e.messages } : e
            ));
         }
       })
@@ -381,7 +433,9 @@ export class SupabaseService {
 
   // Simulate Live Tracking updates
   startSimulation() {
-    setInterval(() => {
+    if (this.simulationInterval) return; // Prevent duplicates
+
+    this.simulationInterval = setInterval(() => {
       // Move vehicles
       this.mockVehicles.update(vehicles => 
         vehicles.map(v => {
@@ -399,6 +453,20 @@ export class SupabaseService {
             };
           }
           return v;
+        })
+      );
+
+      // Update Emergency Locations (Simulate GPS Drift / Towing for Active Jobs)
+      this.mockEmergencies.update(reqs => 
+        reqs.map(r => {
+           if (r.status === 'assigned' || r.status === 'tracking') {
+              return {
+                 ...r,
+                 lat: r.lat + (Math.random() - 0.5) * 0.0008, // Random jitter to simulate live tracking
+                 lng: r.lng + (Math.random() - 0.5) * 0.0008
+              };
+           }
+           return r;
         })
       );
     }, 2000);

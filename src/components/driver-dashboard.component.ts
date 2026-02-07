@@ -547,7 +547,9 @@ export class DriverDashboardComponent implements OnDestroy {
       await this.supabase.createEmergency({
         lat: v.lat,
         lng: v.lng,
-        location: `Lat: ${v.lat.toFixed(4)}, Lng: ${v.lng.toFixed(4)}`
+        location: `Lat: ${v.lat.toFixed(4)}, Lng: ${v.lng.toFixed(4)}`,
+        vehicle_reg: v.registration_number, // Add vehicle registration
+        type: 'General Issue' 
       });
       alert('SOS Signal Sent! Admin and nearby mechanics alerted.');
     }
