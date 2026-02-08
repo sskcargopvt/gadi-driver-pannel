@@ -164,23 +164,26 @@ export class SupabaseService {
   subscribeToBookingRequests() {
     if (this.bookingChannel) return;
 
-    this.bookingChannel = this.supabase.channel('public:booking_requests')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'booking_requests' }, (payload) => {
-        const eventType = payload.eventType;
-        const newRow = payload.new as any;
-        const oldRow = payload.old as any;
+    const topic = 'booking_requests';
+    // Using broadcast as requested by DB trigger logic
+    this.bookingChannel = this.supabase.channel(topic, { config: { private: true } })
+      .on('broadcast', { event: '*' }, (payload: any) => {
+        
+        const type = payload.type || payload.event;
+        const newRow = payload.new ?? payload.new_row ?? payload.payload;
+        const oldRow = payload.old ?? payload.old_row;
 
-        if (eventType === 'INSERT' && newRow) {
+        if (type === 'INSERT' && newRow) {
           const newBooking: BookingRequest = this.mapToBookingRequest(newRow);
           this.liveBookings.update(bookings => [newBooking, ...bookings]);
           this.showNotification('New Booking Request!', `${newBooking.customer_name} - ${newBooking.pickup_location}`);
         } 
-        else if (eventType === 'UPDATE' && newRow) {
+        else if (type === 'UPDATE' && newRow) {
           this.liveBookings.update(bookings =>
             bookings.map(b => b.id === newRow.id ? { ...b, ...this.mapToBookingRequest(newRow) } : b)
           );
         } 
-        else if (eventType === 'DELETE' && oldRow) {
+        else if (type === 'DELETE' && oldRow) {
           this.liveBookings.update(bookings =>
             bookings.filter(b => b.id !== oldRow.id)
           );
@@ -188,7 +191,9 @@ export class SupabaseService {
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          console.log('✅ Subscribed to real-time booking_requests');
+          console.log('✅ Subscribed to real-time booking_requests (Broadcast)');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Channel error on booking_requests');
         }
       });
   }
