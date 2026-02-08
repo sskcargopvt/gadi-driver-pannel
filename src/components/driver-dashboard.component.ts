@@ -197,67 +197,128 @@ import { FormsModule } from '@angular/forms';
           }
         }
 
-        <!-- 2. Requests Tab -->
+        <!-- 2. Requests Tab (LIVE) -->
         @if (activeTab() === 'requests') {
           <div class="space-y-4 animate-fade-in">
-            <!-- Feed Info -->
-            <div class="bg-blue-50 text-blue-800 text-xs p-3 rounded-lg border border-blue-100 flex items-center gap-2">
-               <span class="material-icons text-sm animate-spin">sync</span>
-               Live feed: new booking requests appear here automatically.
+            <!-- Feed Status -->
+            <div class="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-gray-100">
+               <div class="flex items-center gap-2">
+                 <span class="relative flex h-3 w-3">
+                   <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                   <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                 </span>
+                 <span class="text-xs font-bold text-gray-600">Live Feed Active</span>
+               </div>
+               <span class="text-[10px] text-gray-400">Syncing with server...</span>
             </div>
 
             @if(pendingRequests().length === 0) {
               <div class="text-center py-10 text-gray-400">
-                <span class="material-icons text-5xl mb-2">notifications_off</span>
-                <p>No new requests right now.</p>
+                <span class="material-icons text-5xl mb-2 text-gray-300">notifications_none</span>
+                <p>No new requests. Waiting for customers...</p>
               </div>
             }
 
-            @for (req of pendingRequests(); track req.id) {
-              <div class="bg-white rounded-2xl shadow-lg border-l-4 border-blue-500 overflow-hidden">
+            @for (booking of pendingRequests(); track booking.id) {
+              <div class="bg-white rounded-xl shadow-md border-l-4 overflow-hidden transition-all hover:shadow-lg"
+                   [class.border-blue-500]="booking.status === 'pending'"
+                   [class.border-yellow-500]="booking.status === 'bargaining'"
+                   [class.border-green-500]="booking.status === 'accepted'">
+                
                 <div class="p-4">
-                  <div class="flex justify-between items-start mb-2">
+                  <!-- Header -->
+                  <div class="flex justify-between items-start mb-3">
                      <div>
-                       <h3 class="font-bold text-lg text-gray-800">{{req.goods_type}}</h3>
-                       <p class="text-sm text-gray-500">{{req.weight}}</p>
+                       <h3 class="font-bold text-lg text-gray-900">{{ booking.customer_name }}</h3>
+                       <div class="flex items-center gap-2 mt-1">
+                          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase"
+                                [class.bg-blue-100]="booking.status === 'pending'"
+                                [class.text-blue-800]="booking.status === 'pending'"
+                                [class.bg-yellow-100]="booking.status === 'bargaining'"
+                                [class.text-yellow-800]="booking.status === 'bargaining'"
+                                [class.bg-green-100]="booking.status === 'accepted'"
+                                [class.text-green-800]="booking.status === 'accepted'">
+                            {{booking.status}}
+                          </span>
+                       </div>
                      </div>
                      <div class="text-right">
-                       <div class="text-xl font-bold text-green-600">₹{{req.offered_price}}</div>
-                       <div class="text-xs text-gray-400" *ngIf="req.status === 'negotiating'">Counter Offer Sent</div>
+                       <div class="text-xl font-bold text-slate-700">₹{{ booking.offered_price }}</div>
+                       <div class="text-[10px] text-gray-500 uppercase font-bold">Offer</div>
                      </div>
                   </div>
                   
-                  <div class="flex items-center gap-2 mb-2 text-sm text-gray-600">
-                    <span class="material-icons text-base text-gray-400">location_on</span>
-                    <span class="truncate">{{req.pickup_location}}</span>
-                  </div>
-                  <div class="flex items-center gap-2 mb-4 text-sm text-gray-600">
-                    <span class="material-icons text-base text-gray-400">flag</span>
-                    <span class="truncate">{{req.drop_location}}</span>
+                  <!-- Details -->
+                  <div class="bg-gray-50 rounded-lg p-3 mb-3 text-sm space-y-2 border border-gray-100">
+                     <div class="flex items-start gap-2">
+                       <span class="material-icons text-gray-400 text-sm mt-0.5">circle</span>
+                       <div>
+                         <span class="block text-[10px] text-gray-400 font-bold uppercase">Pickup</span>
+                         <span class="text-gray-700 leading-tight">{{booking.pickup_location}}</span>
+                       </div>
+                     </div>
+                     <div class="flex items-start gap-2">
+                       <span class="material-icons text-gray-400 text-sm mt-0.5">location_on</span>
+                       <div>
+                         <span class="block text-[10px] text-gray-400 font-bold uppercase">Drop-Off</span>
+                         <span class="text-gray-700 leading-tight">{{booking.drop_location}}</span>
+                       </div>
+                     </div>
+                     <div class="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-gray-200">
+                        <div>
+                          <span class="block text-[10px] text-gray-400 font-bold uppercase">Goods</span>
+                          <span class="text-gray-700">{{booking.goods_type}}</span>
+                        </div>
+                        <div>
+                          <span class="block text-[10px] text-gray-400 font-bold uppercase">Weight</span>
+                          <span class="text-gray-700">{{booking.weight}}</span>
+                        </div>
+                     </div>
                   </div>
 
-                  @if (bargainingId() === req.id) {
-                    <div class="mb-3 bg-yellow-50 p-3 rounded-lg border border-yellow-100">
-                      <label class="block text-xs font-bold text-yellow-800 mb-1">Your Counter Offer (₹)</label>
+                  <!-- Bargaining State -->
+                  @if (booking.status === 'bargaining' && booking.counter_offer) {
+                    <div class="mb-3 bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-yellow-800 text-sm">
+                       <p class="font-bold flex items-center gap-1">
+                         <span class="material-icons text-sm">chat</span> Counter-offer sent: ₹{{ booking.counter_offer }}
+                       </p>
+                       <p class="text-xs opacity-80 mt-1">Waiting for customer response...</p>
+                    </div>
+                  }
+
+                  <!-- Counter Offer Input Form -->
+                  @if (bargainingId() === booking.id) {
+                    <div class="mb-3 bg-slate-100 p-3 rounded-lg border border-slate-200">
+                      <label class="block text-xs font-bold text-slate-600 mb-1">Enter your price (₹)</label>
                       <div class="flex gap-2">
-                        <input type="number" [(ngModel)]="counterOfferAmount" class="flex-1 p-2 border rounded-md" placeholder="Amount">
-                        <button (click)="submitCounterOffer(req.id)" class="bg-yellow-600 text-white px-3 rounded-md font-bold">Send</button>
-                        <button (click)="bargainingId.set(null)" class="text-gray-500 px-2">Cancel</button>
+                        <input type="number" [(ngModel)]="counterOfferAmount" 
+                               class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                               placeholder="e.g. 3000">
+                        <button (click)="submitCounterOffer(booking.id)" 
+                                class="bg-blue-600 text-white px-4 rounded-lg font-bold text-sm">Send</button>
+                        <button (click)="bargainingId.set(null)" 
+                                class="bg-white text-gray-500 border border-gray-300 px-3 rounded-lg font-bold text-sm">Cancel</button>
                       </div>
                     </div>
                   }
 
-                  <div class="grid grid-cols-3 gap-2">
-                    <button (click)="respond(req.id, 'accept')" class="bg-green-600 text-white py-2 rounded-lg font-bold hover:bg-green-700">
-                      Accept
-                    </button>
-                    <button (click)="startBargain(req.id)" class="bg-yellow-500 text-white py-2 rounded-lg font-bold hover:bg-yellow-600">
-                      Bargain
-                    </button>
-                    <button (click)="respond(req.id, 'reject')" class="bg-red-100 text-red-600 py-2 rounded-lg font-bold hover:bg-red-200">
-                      Decline
-                    </button>
-                  </div>
+                  <!-- Actions -->
+                  @if (booking.status === 'pending') {
+                    <div class="grid grid-cols-3 gap-2">
+                      <button (click)="acceptBooking(booking)" 
+                              class="bg-green-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-green-700 shadow-sm transition-colors flex justify-center items-center gap-1">
+                        <span class="material-icons text-sm">check</span> ACCEPT
+                      </button>
+                      <button (click)="startBargain(booking.id)" 
+                              class="bg-yellow-500 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-yellow-600 shadow-sm transition-colors flex justify-center items-center gap-1">
+                        <span class="material-icons text-sm">chat</span> BARGAIN
+                      </button>
+                      <button (click)="rejectBooking(booking)" 
+                              class="bg-red-50 text-red-600 border border-red-100 py-2.5 rounded-lg font-bold text-sm hover:bg-red-100 transition-colors flex justify-center items-center gap-1">
+                        <span class="material-icons text-sm">close</span> REJECT
+                      </button>
+                    </div>
+                  }
                 </div>
               </div>
             }
@@ -454,8 +515,10 @@ export class DriverDashboardComponent implements OnDestroy {
   
   currentVehicle = signal<Vehicle | null>(null);
   
-  requests = this.supabase.mockBookings;
-  pendingRequests = computed(() => this.requests().filter(r => r.status === 'pending' || r.status === 'negotiating'));
+  // Use real-time live bookings
+  requests = this.supabase.liveBookings;
+  
+  pendingRequests = computed(() => this.requests().filter(r => r.status === 'pending' || r.status === 'bargaining'));
   
   // Sort messages chronologically
   activeJob = computed(() => {
@@ -486,12 +549,15 @@ export class DriverDashboardComponent implements OnDestroy {
 
   constructor() {
     this.loadVehicle();
+    
+    // Initialize Real-time Feed
+    this.supabase.subscribeToBookingRequests();
     this.supabase.getBookings().then(() => {
        // Set initial pending count to avoid alert on load
        this.previousPendingCount = this.pendingRequests().length;
     });
+
     this.supabase.startSimulation();
-    this.supabase.subscribeToBookings();
     
     this.intervalId = setInterval(() => {
       this.loadVehicle();
@@ -530,6 +596,7 @@ export class DriverDashboardComponent implements OnDestroy {
   }
 
   ngOnDestroy() {
+    this.supabase.unsubscribeFromBookings();
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
@@ -614,10 +681,21 @@ export class DriverDashboardComponent implements OnDestroy {
     this.loadingAi.set(false);
   }
 
-  respond(id: string, action: 'accept' | 'reject') {
-    this.supabase.respondToBooking(id, action);
-    if (action === 'accept') {
+  async acceptBooking(booking: BookingRequest) {
+    try {
+      const driverId = this.auth.currentUser()?.id || 'unknown-driver';
+      await this.supabase.acceptBooking(booking.id, driverId);
       this.setActiveTab('active');
+    } catch (e) {
+      alert('Failed to accept booking. Please try again.');
+    }
+  }
+
+  async rejectBooking(booking: BookingRequest) {
+    try {
+      await this.supabase.rejectBooking(booking.id);
+    } catch (e) {
+      alert('Failed to reject booking.');
     }
   }
 
@@ -627,10 +705,14 @@ export class DriverDashboardComponent implements OnDestroy {
     this.counterOfferAmount = req ? req.offered_price : 0;
   }
 
-  submitCounterOffer(id: string) {
+  async submitCounterOffer(id: string) {
     if (this.counterOfferAmount > 0) {
-      this.supabase.respondToBooking(id, 'accept', this.counterOfferAmount);
-      this.bargainingId.set(null);
+      try {
+        await this.supabase.counterOffer(id, this.counterOfferAmount);
+        this.bargainingId.set(null);
+      } catch (e) {
+        alert('Failed to send counter offer.');
+      }
     }
   }
 

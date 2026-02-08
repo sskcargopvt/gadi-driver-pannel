@@ -26,14 +26,14 @@ export class MapComponent implements AfterViewInit, OnDestroy {
   constructor() {
     effect(() => {
       const c = this.center();
-      if (this.map) {
+      if (this.map && typeof L !== 'undefined') {
         this.map.setView([c.lat, c.lng], 13);
       }
     });
 
     effect(() => {
       const ms = this.markers();
-      if (this.map && this.markerLayer) {
+      if (this.map && this.markerLayer && typeof L !== 'undefined') {
         this.markerLayer.clearLayers();
         ms.forEach(m => {
           let color = 'blue';
@@ -67,17 +67,33 @@ export class MapComponent implements AfterViewInit, OnDestroy {
 
   private initMap() {
     if (!this.mapContainer) return;
-
-    this.map = L.map(this.mapContainer.nativeElement).setView([this.center().lat, this.center().lng], 5);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(this.map);
-
-    this.markerLayer = L.layerGroup().addTo(this.map);
     
-    setTimeout(() => {
-      this.map.invalidateSize();
-    }, 100);
+    // Safety check: ensure Leaflet is loaded
+    if (typeof L === 'undefined') {
+      console.warn('Leaflet not loaded yet. Retrying in 500ms...');
+      setTimeout(() => this.initMap(), 500);
+      return;
+    }
+
+    // Prevent double initialization
+    if (this.map) {
+      this.map.remove();
+    }
+
+    try {
+      this.map = L.map(this.mapContainer.nativeElement).setView([this.center().lat, this.center().lng], 5);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(this.map);
+
+      this.markerLayer = L.layerGroup().addTo(this.map);
+      
+      setTimeout(() => {
+        this.map.invalidateSize();
+      }, 100);
+    } catch (e) {
+      console.error('Error initializing map:', e);
+    }
   }
 }

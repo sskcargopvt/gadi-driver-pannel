@@ -8,8 +8,8 @@ export type UserRole = 'driver' | 'mechanic' | 'admin' | null;
   providedIn: 'root'
 })
 export class AuthService {
-  private supabase = inject(SupabaseService);
-  private router = inject(Router);
+  private supabase: SupabaseService = inject(SupabaseService);
+  private router: Router = inject(Router);
 
   currentUser = signal<{ name: string, role: UserRole, id: string, email?: string } | null>(null);
 

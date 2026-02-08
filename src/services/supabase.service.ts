@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 
 // Configuration for Gaadi Dost Backend
 const SUPABASE_URL = 'https://tstboympleybwbdwicik.supabase.co';
@@ -29,9 +29,7 @@ export interface EmergencyRequest {
   lng: number;
   amount: number;
   created_at: string;
-  // Added for mechanic chat
   messages: {sender: 'mechanic'|'driver', text: string, time: Date | string}[];
-  // Extended details
   vehicle_reg?: string;
   assigned_mechanic?: string;
 }
@@ -45,14 +43,17 @@ export interface BookingRequest {
   goods_type: string;
   weight: string;
   offered_price: number;
-  counter_offer?: number; // Added to match requirement
-  status: 'pending' | 'accepted' | 'rejected' | 'negotiating' | 'completed';
+  counter_offer?: number;
+  status: 'pending' | 'accepted' | 'rejected' | 'bargaining' | 'completed';
   pickup_lat: number;
   pickup_lng: number;
   drop_lat: number;
   drop_lng: number;
   created_at: string;
+  updated_at?: string;
   messages: {sender: 'driver'|'customer', text: string, time: Date | string}[];
+  driver_id?: string;
+  driver_response?: string;
 }
 
 export interface Load {
@@ -74,9 +75,13 @@ export interface Load {
 export class SupabaseService {
   private supabase: SupabaseClient;
   private simulationInterval: any;
+  private bookingChannel: RealtimeChannel | null = null;
   
-  // Mock data stores for demo fallback
-  private mockVehicles = signal<Vehicle[]>([
+  // Real-time signals
+  liveBookings = signal<BookingRequest[]>([]);
+  
+  // Legacy/Mock data stores (Synced with liveBookings where possible)
+  mockVehicles = signal<Vehicle[]>([
     {
       id: 'v1',
       registration_number: 'KA-01-HH-1234',
@@ -121,25 +126,8 @@ export class SupabaseService {
     }
   ]);
 
-  mockBookings = signal<BookingRequest[]>([
-    {
-      id: 'b1',
-      customer_name: 'Rajesh Kumar',
-      customer_phone: '+91 98765 43210',
-      pickup_location: 'Whitefield, Bangalore',
-      drop_location: 'Electronic City, Bangalore',
-      goods_type: 'Furniture (Sofa + Table)',
-      weight: '500kg',
-      offered_price: 2500,
-      status: 'pending',
-      pickup_lat: 12.9698,
-      pickup_lng: 77.7500,
-      drop_lat: 12.8399,
-      drop_lng: 77.6770,
-      created_at: new Date().toISOString(),
-      messages: []
-    }
-  ]);
+  // Alias for backward compatibility, though we prefer liveBookings now
+  mockBookings = this.liveBookings;
 
   mockLoads = signal<Load[]>([
      { id: 'l1', source: 'Bangalore', destination: 'Chennai', material: 'Textiles', weight: '2 Tons', expected_price: 15000, contact: 'Logistics Co.', company: 'FastTrack Logistics', status: 'available' },
@@ -149,23 +137,187 @@ export class SupabaseService {
 
   constructor() {
     this.supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    // Initialize with some mock data if needed or empty
+    this.liveBookings.set([
+      {
+        id: 'b1',
+        customer_name: 'Rajesh Kumar',
+        customer_phone: '+91 98765 43210',
+        pickup_location: 'Whitefield, Bangalore',
+        drop_location: 'Electronic City, Bangalore',
+        goods_type: 'Furniture (Sofa + Table)',
+        weight: '500kg',
+        offered_price: 2500,
+        status: 'pending',
+        pickup_lat: 12.9698,
+        pickup_lng: 77.7500,
+        drop_lat: 12.8399,
+        drop_lng: 77.6770,
+        created_at: new Date().toISOString(),
+        messages: []
+      }
+    ]);
   }
 
-  // --- Auth Methods ---
+  // --- Real-Time Booking Methods ---
+
+  subscribeToBookingRequests() {
+    if (this.bookingChannel) return;
+
+    this.bookingChannel = this.supabase.channel('public:booking_requests')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'booking_requests' }, (payload) => {
+        const eventType = payload.eventType;
+        const newRow = payload.new as any;
+        const oldRow = payload.old as any;
+
+        if (eventType === 'INSERT' && newRow) {
+          const newBooking: BookingRequest = this.mapToBookingRequest(newRow);
+          this.liveBookings.update(bookings => [newBooking, ...bookings]);
+          this.showNotification('New Booking Request!', `${newBooking.customer_name} - ${newBooking.pickup_location}`);
+        } 
+        else if (eventType === 'UPDATE' && newRow) {
+          this.liveBookings.update(bookings =>
+            bookings.map(b => b.id === newRow.id ? { ...b, ...this.mapToBookingRequest(newRow) } : b)
+          );
+        } 
+        else if (eventType === 'DELETE' && oldRow) {
+          this.liveBookings.update(bookings =>
+            bookings.filter(b => b.id !== oldRow.id)
+          );
+        }
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Subscribed to real-time booking_requests');
+        }
+      });
+  }
+
+  unsubscribeFromBookings() {
+    if (this.bookingChannel) {
+      this.supabase.removeChannel(this.bookingChannel);
+      this.bookingChannel = null;
+    }
+  }
+
+  async acceptBooking(bookingId: string, driverId: string) {
+    // Optimistic Update
+    this.liveBookings.update(bookings => 
+      bookings.map(b => b.id === bookingId ? { ...b, status: 'accepted', driver_id: driverId } : b)
+    );
+
+    const { data, error } = await this.supabase
+      .from('booking_requests')
+      .update({
+        status: 'accepted',
+        driver_id: driverId,
+        driver_response: 'Confirmed! I will pick up on time.',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error accepting booking:', error);
+      // Revert if error (simplified)
+      this.getBookings(); // Refresh from server
+      throw error;
+    }
+    return data;
+  }
+
+  async rejectBooking(bookingId: string) {
+    // Optimistic Update
+    this.liveBookings.update(bookings => 
+      bookings.map(b => b.id === bookingId ? { ...b, status: 'rejected' } : b)
+    );
+
+    const { data, error } = await this.supabase
+      .from('booking_requests')
+      .update({
+        status: 'rejected',
+        driver_response: 'Not available at this time.',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId)
+      .select()
+      .single();
+
+    if (error) {
+       console.error('Error rejecting booking:', error);
+       this.getBookings();
+       throw error;
+    }
+    return data;
+  }
+
+  async counterOffer(bookingId: string, counterPrice: number) {
+    // Optimistic Update
+    this.liveBookings.update(bookings => 
+      bookings.map(b => b.id === bookingId ? { ...b, status: 'bargaining', counter_offer: counterPrice } : b)
+    );
+
+    const { data, error } = await this.supabase
+      .from('booking_requests')
+      .update({
+        status: 'bargaining',
+        counter_offer: counterPrice,
+        driver_response: `I can do it for ₹${counterPrice}`,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error sending counter-offer:', error);
+      this.getBookings();
+      throw error;
+    }
+    return data;
+  }
+
+  private showNotification(title: string, body: string) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, { body, icon: 'https://cdn-icons-png.flaticon.com/512/741/741407.png' });
+    } else if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }
+
+  private mapToBookingRequest(row: any): BookingRequest {
+    return {
+      id: row.id,
+      customer_name: row.customer_name || 'Customer',
+      customer_phone: row.customer_phone || '',
+      pickup_location: row.pickup_location || 'Unknown',
+      drop_location: row.drop_location || 'Unknown',
+      goods_type: row.goods_type || 'General',
+      weight: row.weight || '0kg',
+      offered_price: row.offered_price || 0,
+      counter_offer: row.counter_offer,
+      status: row.status || 'pending',
+      pickup_lat: row.pickup_lat || 0,
+      pickup_lng: row.pickup_lng || 0,
+      drop_lat: row.drop_lat || 0,
+      drop_lng: row.drop_lng || 0,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      messages: row.messages || [],
+      driver_id: row.driver_id,
+      driver_response: row.driver_response
+    };
+  }
+
+  // --- Existing Methods (Refactored to use liveBookings) ---
   
   async signIn(email: string, password: string) {
-    return await this.supabase.auth.signInWithPassword({
-      email,
-      password
-    });
+    return await this.supabase.auth.signInWithPassword({ email, password });
   }
 
   async signUp(email: string, password: string, data: any) {
-    return await this.supabase.auth.signUp({
-      email,
-      password,
-      options: { data }
-    });
+    return await this.supabase.auth.signUp({ email, password, options: { data } });
   }
 
   async signOut() {
@@ -175,8 +327,6 @@ export class SupabaseService {
   async getUser() {
     return await this.supabase.auth.getUser();
   }
-
-  // --- Real Implementation ---
 
   async getVehicles(): Promise<Vehicle[]> {
     try {
@@ -194,10 +344,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase.from('emergency_requests').select('*');
       if (error || !data) throw error;
       if (data.length > 0) {
-        const mappedData = data.map((e: any) => ({
-           ...e,
-           messages: e.messages || []
-        }));
+        const mappedData = data.map((e: any) => ({ ...e, messages: e.messages || [] }));
         this.mockEmergencies.set(mappedData as EmergencyRequest[]);
         return mappedData as EmergencyRequest[];
       }
@@ -215,32 +362,14 @@ export class SupabaseService {
       if (error) throw error;
       
       if (data && data.length > 0) {
-        const mappedData: BookingRequest[] = data.map((b: any) => ({
-            id: b.id,
-            customer_name: b.customer_name || 'Customer',
-            customer_phone: b.customer_phone || '',
-            pickup_location: b.pickup_location || 'Unknown',
-            drop_location: b.drop_location || 'Unknown',
-            goods_type: b.goods_type || 'General',
-            weight: b.weight || '0kg',
-            offered_price: b.offered_price || 0,
-            counter_offer: b.counter_offer,
-            status: b.status || 'pending',
-            pickup_lat: b.pickup_lat || 0,
-            pickup_lng: b.pickup_lng || 0,
-            drop_lat: b.drop_lat || 0,
-            drop_lng: b.drop_lng || 0,
-            created_at: b.created_at,
-            messages: b.messages || []
-        }));
-        
-        this.mockBookings.set(mappedData);
+        const mappedData = data.map(this.mapToBookingRequest);
+        this.liveBookings.set(mappedData);
         return mappedData;
       }
     } catch (e) {
-      console.warn('Could not fetch real bookings, using mocks', e);
+      console.warn('Could not fetch real bookings, using fallback');
     }
-    return this.mockBookings();
+    return this.liveBookings();
   }
 
   async updateVehicleStatus(id: string, updates: Partial<Vehicle>) {
@@ -290,81 +419,40 @@ export class SupabaseService {
 
   async sendEmergencyMessage(reqId: string, text: string) {
     const newMessage = { sender: 'mechanic' as const, text, time: new Date() };
-    let currentMessages: any[] = [];
-    
-    // Optimistic Update
     const currentReq = this.mockEmergencies().find(e => e.id === reqId);
-    if(currentReq) {
-        currentMessages = [...currentReq.messages, newMessage];
-    }
+    let currentMessages = currentReq ? [...currentReq.messages, newMessage] : [newMessage];
     
-    this.mockEmergencies.update(prev => prev.map(e => {
-        if(e.id === reqId) {
-            return { ...e, messages: currentMessages };
-        }
-        return e;
-    }));
+    this.mockEmergencies.update(prev => prev.map(e => 
+      e.id === reqId ? { ...e, messages: currentMessages } : e
+    ));
     
-    // Real Update
     try {
         const { data } = await this.supabase.from('emergency_requests').select('messages').eq('id', reqId).single();
         const existingMsgs = data?.messages || [];
-        const updatedMsgs = [...existingMsgs, newMessage];
-        await this.supabase.from('emergency_requests').update({ messages: updatedMsgs }).eq('id', reqId);
+        await this.supabase.from('emergency_requests').update({ messages: [...existingMsgs, newMessage] }).eq('id', reqId);
     } catch (e) {}
   }
 
-  // Driver Booking Logic
-  async respondToBooking(id: string, action: 'accept' | 'reject', counterPrice?: number) {
-    this.mockBookings.update(prev => prev.map(b => {
-      if (b.id !== id) return b;
-      
-      if (action === 'accept') {
-        return { ...b, status: 'accepted' };
-      } else if (action === 'reject') {
-        return { ...b, status: 'rejected' };
-      } else if (counterPrice) {
-        return { ...b, status: 'negotiating', counter_offer: counterPrice };
-      }
-      return b;
-    }));
-    
-    try {
-      const updatePayload: any = { status: action === 'accept' ? 'accepted' : 'rejected' };
-      if (counterPrice) {
-         updatePayload.status = 'negotiating';
-         updatePayload.counter_offer = counterPrice;
-      }
-      await this.supabase.from('booking_requests').update(updatePayload).eq('id', id);
-    } catch(e) {}
+  // Kept for legacy internal calls, delegates to counterOffer/acceptBooking where possible or does local update
+  async respondToBooking(id: string, action: 'accept' | 'reject', driverId: string, counterPrice?: number) {
+    if (action === 'accept') {
+       if (counterPrice) await this.counterOffer(id, counterPrice);
+       else await this.acceptBooking(id, driverId);
+    } else {
+       await this.rejectBooking(id);
+    }
   }
 
   async sendMessage(bookingId: string, text: string) {
-    // 1. Optimistic Update
     const newMessage = { sender: 'driver' as const, text, time: new Date() };
-    let currentMessages: any[] = [];
-    
-    // Find current messages from state
-    const currentBooking = this.mockBookings().find(b => b.id === bookingId);
-    if (currentBooking) {
-      currentMessages = [...currentBooking.messages, newMessage];
-    }
+    this.liveBookings.update(prev => prev.map(b => 
+      b.id === bookingId ? { ...b, messages: [...b.messages, newMessage] } : b
+    ));
 
-    this.mockBookings.update(prev => prev.map(b => {
-      if (b.id === bookingId) {
-        return { ...b, messages: currentMessages };
-      }
-      return b;
-    }));
-
-    // 2. Real Update
     try {
-      // First fetch latest to ensure no overwrite, then append
       const { data } = await this.supabase.from('booking_requests').select('messages').eq('id', bookingId).single();
       const existingMsgs = data?.messages || [];
-      const updatedMsgs = [...existingMsgs, newMessage];
-      
-      await this.supabase.from('booking_requests').update({ messages: updatedMsgs }).eq('id', bookingId);
+      await this.supabase.from('booking_requests').update({ messages: [...existingMsgs, newMessage] }).eq('id', bookingId);
     } catch (e) {
       console.error('Failed to send message to DB', e);
     }
@@ -376,58 +464,8 @@ export class SupabaseService {
     ));
   }
 
-  // Subscribe to Realtime Booking Requests
   subscribeToBookings() {
-    this.supabase.channel('public:booking_requests')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'booking_requests' }, (payload) => {
-        const newRecord = payload.new as any;
-        const eventType = payload.eventType;
-
-        if (eventType === 'INSERT') {
-          const newBooking: BookingRequest = {
-            id: newRecord.id,
-            customer_name: newRecord.customer_name || 'New Customer',
-            customer_phone: newRecord.customer_phone || '',
-            pickup_location: newRecord.pickup_location || 'Unknown',
-            drop_location: newRecord.drop_location || 'Unknown',
-            goods_type: newRecord.goods_type || 'General',
-            weight: newRecord.weight || '0kg',
-            offered_price: newRecord.offered_price || 0,
-            counter_offer: newRecord.counter_offer,
-            status: newRecord.status || 'pending',
-            pickup_lat: newRecord.pickup_lat || 0,
-            pickup_lng: newRecord.pickup_lng || 0,
-            drop_lat: newRecord.drop_lat || 0,
-            drop_lng: newRecord.drop_lng || 0,
-            created_at: newRecord.created_at || new Date().toISOString(),
-            messages: newRecord.messages || []
-          };
-          
-          this.mockBookings.update(prev => {
-            if (prev.find(b => b.id === newBooking.id)) return prev;
-            return [newBooking, ...prev];
-          });
-
-        } else if (eventType === 'UPDATE') {
-          this.mockBookings.update(prev => prev.map(b => {
-            if (b.id === newRecord.id) {
-              return { 
-                ...b, 
-                ...newRecord,
-                messages: newRecord.messages || b.messages 
-              };
-            }
-            return b;
-          }));
-        }
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('Connected: Listening to all incoming booking requests in real time.');
-        } else {
-          console.log('Booking Channel Status:', status);
-        }
-      });
+    this.subscribeToBookingRequests(); // Delegate to new method
   }
 
   subscribeToEmergencies() {
@@ -435,24 +473,10 @@ export class SupabaseService {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'emergency_requests' }, (payload) => {
         const newRecord = payload.new as any;
         if (payload.eventType === 'INSERT') {
-          const newEmergency: EmergencyRequest = {
-            id: newRecord.id,
-            type: newRecord.type || 'General',
-            status: newRecord.status || 'pending',
-            eta: newRecord.eta || 0,
-            location: newRecord.location || 'Unknown',
-            lat: newRecord.lat || 0,
-            lng: newRecord.lng || 0,
-            amount: newRecord.amount || 0,
-            created_at: newRecord.created_at || new Date().toISOString(),
-            messages: newRecord.messages || [],
-            vehicle_reg: newRecord.vehicle_reg || 'Unknown',
-            assigned_mechanic: newRecord.assigned_mechanic
-          };
-          this.mockEmergencies.update(prev => {
-             if(prev.find(e => e.id === newEmergency.id)) return prev;
-             return [...prev, newEmergency];
-          });
+           this.mockEmergencies.update(prev => [...prev, {
+             ...newRecord,
+             messages: newRecord.messages || []
+           }]);
         } else if (payload.eventType === 'UPDATE') {
            this.mockEmergencies.update(prev => prev.map(e => 
              e.id === newRecord.id ? { ...e, ...newRecord, messages: newRecord.messages || e.messages } : e
@@ -462,42 +486,22 @@ export class SupabaseService {
       .subscribe();
   }
 
-  // Simulate Live Tracking updates
   startSimulation() {
-    if (this.simulationInterval) return; // Prevent duplicates
+    if (this.simulationInterval) return;
 
     this.simulationInterval = setInterval(() => {
-      // Move vehicles
       this.mockVehicles.update(vehicles => 
         vehicles.map(v => {
           if (v.status === 'Running') {
-            const newSpeed = Math.max(0, Math.min(120, v.speed + (Math.random() - 0.5) * 20)); 
-            const newFuel = Math.max(0, v.fuel_level - (Math.random() * 0.5));
-            const newBattery = Math.max(0, v.battery_level - (Math.random() * 0.1));
             return {
               ...v,
               lat: v.lat + (Math.random() - 0.5) * 0.001,
               lng: v.lng + (Math.random() - 0.5) * 0.001,
-              speed: newSpeed,
-              fuel_level: parseFloat(newFuel.toFixed(1)),
-              battery_level: parseFloat(newBattery.toFixed(1))
+              speed: Math.max(0, Math.min(120, v.speed + (Math.random() - 0.5) * 20)),
+              fuel_level: Math.max(0, parseFloat((v.fuel_level - (Math.random() * 0.5)).toFixed(1)))
             };
           }
           return v;
-        })
-      );
-
-      // Update Emergency Locations (Simulate GPS Drift / Towing for Active Jobs)
-      this.mockEmergencies.update(reqs => 
-        reqs.map(r => {
-           if (r.status === 'assigned' || r.status === 'tracking') {
-              return {
-                 ...r,
-                 lat: r.lat + (Math.random() - 0.5) * 0.0008, // Random jitter to simulate live tracking
-                 lng: r.lng + (Math.random() - 0.5) * 0.0008
-              };
-           }
-           return r;
         })
       );
     }, 2000);

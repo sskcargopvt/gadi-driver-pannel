@@ -8,8 +8,17 @@ export class AiService {
   private ai: GoogleGenAI;
 
   constructor() {
-    // Assuming process.env.API_KEY is available in the environment
-    const apiKey = process.env['API_KEY'] || '';
+    let apiKey = '';
+    try {
+      // Safely access process.env to prevent ReferenceError in browser
+      // @ts-ignore
+      if (typeof process !== 'undefined' && process.env) {
+        // @ts-ignore
+        apiKey = process.env['API_KEY'] || '';
+      }
+    } catch (e) {
+      console.warn('Environment variables not accessible, running in demo mode without AI.');
+    }
     this.ai = new GoogleGenAI({ apiKey });
   }
 

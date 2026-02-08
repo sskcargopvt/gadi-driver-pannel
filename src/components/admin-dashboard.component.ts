@@ -340,7 +340,7 @@ export class AdminDashboardComponent implements OnInit {
   sortBy = signal<string>('default');
 
   // Computed Views
-  pendingBookings = computed(() => this.bookings().filter(b => b.status === 'pending' || b.status === 'negotiating'));
+  pendingBookings = computed(() => this.bookings().filter(b => b.status === 'pending' || b.status === 'bargaining'));
   activeEmergencies = computed(() => this.emergencies().filter(e => e.status !== 'completed'));
 
   // Notification State
