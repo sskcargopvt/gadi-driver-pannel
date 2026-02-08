@@ -5,7 +5,7 @@ import { GoogleGenAI, Type } from "@google/genai";
   providedIn: 'root'
 })
 export class AiService {
-  private ai: GoogleGenAI;
+  private ai: GoogleGenAI | null = null;
 
   constructor() {
     let apiKey = '';
@@ -19,11 +19,25 @@ export class AiService {
     } catch (e) {
       console.warn('Environment variables not accessible, running in demo mode without AI.');
     }
-    this.ai = new GoogleGenAI({ apiKey });
+
+    if (apiKey) {
+      try {
+        this.ai = new GoogleGenAI({ apiKey });
+      } catch (e) {
+        console.error('Failed to initialize AI client:', e);
+      }
+    } else {
+      console.warn('No API Key found for AI Service. AI features will be disabled.');
+    }
   }
 
   async estimateLoad(vehicleType: string, cargoDesc: string, distanceKm: number) {
     if (!cargoDesc) return null;
+    
+    // Check if AI is available
+    if (!this.ai) {
+      return this.getMockEstimation(distanceKm);
+    }
 
     try {
       const prompt = `I have a ${vehicleType}. I need to transport: "${cargoDesc}". Distance is ${distanceKm}km in India.
@@ -64,19 +78,24 @@ export class AiService {
       throw new Error('No valid JSON found in response');
     } catch (error) {
       console.error('AI Estimation failed', error);
-      // Fallback mock response if AI fails or key is missing
-      return {
-        loadPercentage: 75,
-        estimatedFuelCost: distanceKm * 8,
-        marketPrice: distanceKm * 25,
-        safetyRating: 'Medium',
-        advice: 'Ensure cargo is strapped down securely. Real-time market data unavailable.',
-        marketComparison: 'Offline estimate'
-      };
+      return this.getMockEstimation(distanceKm);
     }
   }
 
+  private getMockEstimation(distanceKm: number) {
+    return {
+      loadPercentage: 75,
+      estimatedFuelCost: distanceKm * 8,
+      marketPrice: distanceKm * 25,
+      safetyRating: 'Medium',
+      advice: 'Ensure cargo is strapped down securely. Real-time market data unavailable.',
+      marketComparison: 'Offline estimate'
+    };
+  }
+
   async assessLoad(vehicleType: string, material: string, weight: string) {
+    if (!this.ai) return "AI Assessment unavailable (Demo Mode).";
+    
     try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -91,6 +110,15 @@ export class AiService {
 
   async diagnoseIssue(symptoms: string) {
     if (!symptoms) return null;
+    
+    if (!this.ai) {
+      return {
+        causes: ['Battery Dead', 'Alternator Failure', 'Loose Wiring'],
+        recommendation: 'Check voltage with multimeter (Demo Mode).',
+        urgency: 'Medium'
+      };
+    }
+
     try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-2.5-flash',
