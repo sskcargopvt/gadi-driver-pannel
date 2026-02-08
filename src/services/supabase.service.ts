@@ -45,6 +45,7 @@ export interface BookingRequest {
   goods_type: string;
   weight: string;
   offered_price: number;
+  counter_offer?: number; // Added to match requirement
   status: 'pending' | 'accepted' | 'rejected' | 'negotiating' | 'completed';
   pickup_lat: number;
   pickup_lng: number;
@@ -150,6 +151,31 @@ export class SupabaseService {
     this.supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
   }
 
+  // --- Auth Methods ---
+  
+  async signIn(email: string, password: string) {
+    return await this.supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+  }
+
+  async signUp(email: string, password: string, data: any) {
+    return await this.supabase.auth.signUp({
+      email,
+      password,
+      options: { data }
+    });
+  }
+
+  async signOut() {
+    return await this.supabase.auth.signOut();
+  }
+
+  async getUser() {
+    return await this.supabase.auth.getUser();
+  }
+
   // --- Real Implementation ---
 
   async getVehicles(): Promise<Vehicle[]> {
@@ -198,6 +224,7 @@ export class SupabaseService {
             goods_type: b.goods_type || 'General',
             weight: b.weight || '0kg',
             offered_price: b.offered_price || 0,
+            counter_offer: b.counter_offer,
             status: b.status || 'pending',
             pickup_lat: b.pickup_lat || 0,
             pickup_lng: b.pickup_lng || 0,
@@ -297,7 +324,7 @@ export class SupabaseService {
       } else if (action === 'reject') {
         return { ...b, status: 'rejected' };
       } else if (counterPrice) {
-        return { ...b, status: 'negotiating', offered_price: counterPrice };
+        return { ...b, status: 'negotiating', counter_offer: counterPrice };
       }
       return b;
     }));
@@ -306,7 +333,7 @@ export class SupabaseService {
       const updatePayload: any = { status: action === 'accept' ? 'accepted' : 'rejected' };
       if (counterPrice) {
          updatePayload.status = 'negotiating';
-         updatePayload.offered_price = counterPrice;
+         updatePayload.counter_offer = counterPrice;
       }
       await this.supabase.from('booking_requests').update(updatePayload).eq('id', id);
     } catch(e) {}
@@ -354,8 +381,9 @@ export class SupabaseService {
     this.supabase.channel('public:booking_requests')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'booking_requests' }, (payload) => {
         const newRecord = payload.new as any;
-        
-        if (payload.eventType === 'INSERT') {
+        const eventType = payload.eventType;
+
+        if (eventType === 'INSERT') {
           const newBooking: BookingRequest = {
             id: newRecord.id,
             customer_name: newRecord.customer_name || 'New Customer',
@@ -365,6 +393,7 @@ export class SupabaseService {
             goods_type: newRecord.goods_type || 'General',
             weight: newRecord.weight || '0kg',
             offered_price: newRecord.offered_price || 0,
+            counter_offer: newRecord.counter_offer,
             status: newRecord.status || 'pending',
             pickup_lat: newRecord.pickup_lat || 0,
             pickup_lng: newRecord.pickup_lng || 0,
@@ -379,7 +408,7 @@ export class SupabaseService {
             return [newBooking, ...prev];
           });
 
-        } else if (payload.eventType === 'UPDATE') {
+        } else if (eventType === 'UPDATE') {
           this.mockBookings.update(prev => prev.map(b => {
             if (b.id === newRecord.id) {
               return { 
@@ -394,7 +423,9 @@ export class SupabaseService {
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          console.log('Successfully subscribed to booking_requests');
+          console.log('Connected: Listening to all incoming booking requests in real time.');
+        } else {
+          console.log('Booking Channel Status:', status);
         }
       });
   }

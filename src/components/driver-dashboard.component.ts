@@ -16,7 +16,10 @@ import { FormsModule } from '@angular/forms';
       <header class="bg-blue-800 text-white shadow-lg sticky top-0 z-50">
         <div class="p-4 flex justify-between items-center">
           <div>
-            <h1 class="text-xl font-bold">Gaadi Dost Driver</h1>
+            <h1 class="text-xl font-bold flex items-center gap-2">
+              Gaadi Dost Driver
+              <span class="text-[10px] bg-green-500 text-white px-2 py-0.5 rounded-full font-bold shadow animate-pulse" title="Connected: Listening to all incoming booking requests in real time.">LIVE</span>
+            </h1>
             <p class="text-xs opacity-80">{{currentVehicle()?.registration_number || 'Loading...'}}</p>
           </div>
           <button (click)="auth.logout()" class="p-2 bg-blue-900 rounded-lg hover:bg-blue-950">
@@ -120,7 +123,7 @@ import { FormsModule } from '@angular/forms';
               <!-- AI Load Estimator -->
               <div class="bg-white rounded-2xl shadow p-4">
                 <h2 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                  <span class="material-icons text-purple-600">psychology</span> AI Load Estimator
+                  <span class="material-icons text-purple-600">psychology</span> AI Load & Price Estimator
                 </h2>
                 
                 <div class="space-y-3">
@@ -131,21 +134,62 @@ import { FormsModule } from '@angular/forms';
                         [(ngModel)]="distance" 
                         class="w-full p-3 bg-gray-50 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500">
                   <button (click)="estimateLoad()" [disabled]="loadingAi()"
-                          class="w-full bg-purple-600 text-white py-3 rounded-xl font-bold hover:bg-purple-700 disabled:opacity-50">
-                    {{loadingAi() ? 'Thinking...' : 'Calculate'}}
+                          class="w-full bg-purple-600 text-white py-3 rounded-xl font-bold hover:bg-purple-700 disabled:opacity-50 transition shadow">
+                    {{loadingAi() ? 'Scanning Market Rates...' : 'Calculate & Compare Prices'}}
                   </button>
                 </div>
 
                 @if (aiResult()) {
-                  <div class="mt-4 p-4 bg-purple-50 rounded-xl border border-purple-100 animate-fade-in">
-                    <div class="flex justify-between items-center mb-2">
-                      <span class="text-sm text-gray-500">Load</span>
-                      <span class="font-bold">{{aiResult().loadPercentage}}%</span>
+                  <div class="mt-4 p-4 bg-purple-50 rounded-xl border border-purple-100 animate-fade-in space-y-3">
+                    
+                    <!-- Load Bar -->
+                    <div>
+                       <div class="flex justify-between items-center mb-1">
+                         <span class="text-xs text-gray-500 font-bold uppercase">Load Usage</span>
+                         <span class="font-bold text-purple-700">{{aiResult().loadPercentage}}%</span>
+                       </div>
+                       <div class="w-full bg-gray-200 rounded-full h-2">
+                         <div class="bg-purple-600 h-2 rounded-full transition-all duration-1000" [style.width.%]="aiResult().loadPercentage"></div>
+                       </div>
                     </div>
-                    <div class="w-full bg-gray-200 rounded-full h-2 mb-4">
-                      <div class="bg-purple-600 h-2 rounded-full" [style.width.%]="aiResult().loadPercentage"></div>
+
+                    <!-- Pricing Grid -->
+                    <div class="grid grid-cols-2 gap-3">
+                       <div class="bg-white p-2 rounded-lg border border-purple-100 text-center shadow-sm">
+                          <div class="text-[10px] text-gray-400 font-bold uppercase">Est. Fuel Cost</div>
+                          <div class="text-sm font-bold text-gray-700">₹{{aiResult().estimatedFuelCost}}</div>
+                       </div>
+                       <div class="bg-white p-2 rounded-lg border border-green-200 text-center shadow-sm relative overflow-hidden">
+                          <div class="absolute inset-0 bg-green-50 opacity-50"></div>
+                          <div class="relative z-10">
+                             <div class="text-[10px] text-green-600 font-bold uppercase">Fair Market Price</div>
+                             <div class="text-lg font-bold text-green-700">₹{{aiResult().marketPrice}}</div>
+                          </div>
+                       </div>
                     </div>
-                    <p class="text-xs text-gray-600 italic">"{{aiResult().advice}}"</p>
+                    
+                    <!-- Market Comparison -->
+                    @if(aiResult().marketComparison) {
+                      <div class="flex items-start gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100">
+                         <span class="material-icons text-blue-500 text-sm mt-0.5">query_stats</span>
+                         <p class="text-xs text-blue-800 leading-tight">
+                           <span class="font-bold">Market Insight:</span> {{aiResult().marketComparison}}
+                         </p>
+                      </div>
+                    }
+
+                    <!-- Safety & Advice -->
+                    <div class="flex items-start gap-2">
+                       <span class="material-icons text-sm" 
+                          [class.text-green-500]="aiResult().safetyRating === 'High'"
+                          [class.text-yellow-500]="aiResult().safetyRating === 'Medium'"
+                          [class.text-red-500]="aiResult().safetyRating === 'Low'">
+                          verified_user
+                       </span>
+                       <div class="flex-1">
+                          <p class="text-xs text-gray-700 font-medium">"{{aiResult().advice}}"</p>
+                       </div>
+                    </div>
                   </div>
                 }
               </div>
@@ -156,6 +200,12 @@ import { FormsModule } from '@angular/forms';
         <!-- 2. Requests Tab -->
         @if (activeTab() === 'requests') {
           <div class="space-y-4 animate-fade-in">
+            <!-- Feed Info -->
+            <div class="bg-blue-50 text-blue-800 text-xs p-3 rounded-lg border border-blue-100 flex items-center gap-2">
+               <span class="material-icons text-sm animate-spin">sync</span>
+               Live feed: new booking requests appear here automatically.
+            </div>
+
             @if(pendingRequests().length === 0) {
               <div class="text-center py-10 text-gray-400">
                 <span class="material-icons text-5xl mb-2">notifications_off</span>

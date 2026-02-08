@@ -1,5 +1,6 @@
 import { Component, inject, signal, computed, OnInit, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
 import { SupabaseService, Vehicle } from '../services/supabase.service';
 import { MapComponent } from './map.component';
@@ -7,7 +8,7 @@ import { MapComponent } from './map.component';
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [CommonModule, MapComponent],
+  imports: [CommonModule, MapComponent, FormsModule],
   template: `
     <div class="min-h-screen bg-slate-100 relative">
       <!-- Toast Notifications Container -->
@@ -126,37 +127,54 @@ import { MapComponent } from './map.component';
                     </div>
                  }
                  @for (em of activeEmergencies(); track em.id) {
-                   <div class="p-4 border-b border-slate-100 hover:bg-red-50/50 transition border-l-4 border-red-500">
+                   <div class="p-4 border-b border-slate-100 hover:bg-red-50/50 transition border-l-4 border-red-500 group">
                      <div class="flex justify-between mb-1">
                         <span class="font-bold text-gray-800">{{em.type}}</span>
-                        <span class="text-xs font-bold uppercase px-2 py-0.5 rounded"
+                        <span class="text-xs font-bold uppercase px-2 py-0.5 rounded shadow-sm"
                           [class.bg-red-100]="em.status === 'pending'" [class.text-red-700]="em.status === 'pending'"
-                          [class.bg-blue-100]="em.status === 'assigned'" [class.text-blue-700]="em.status === 'assigned'">
+                          [class.bg-blue-100]="em.status === 'assigned'" [class.text-blue-700]="em.status === 'assigned'"
+                          [class.bg-yellow-100]="em.status === 'tracking'" [class.text-yellow-700]="em.status === 'tracking'">
                           {{em.status}}
                         </span>
                      </div>
-                     <p class="text-sm text-gray-600 mb-1 flex items-center gap-1">
+                     <p class="text-sm text-gray-600 mb-2 flex items-center gap-1">
                         <span class="material-icons text-xs text-gray-400">location_on</span>
                         {{em.location}}
                      </p>
                      
-                     <!-- Extended Info: Vehicle & Mechanic -->
-                     <div class="flex justify-between items-center text-xs text-gray-500 mt-2 bg-slate-50 p-2 rounded">
-                        <div class="flex items-center gap-1">
-                            <span class="material-icons text-xs">directions_car</span>
-                            <span class="font-semibold">{{em.vehicle_reg || 'N/A'}}</span>
+                     <!-- Enhanced Info: Vehicle & Mechanic -->
+                     <div class="grid grid-cols-2 gap-2 mt-2">
+                        <div class="bg-slate-50 p-2 rounded border border-slate-100 flex items-center gap-2">
+                           <div class="bg-white p-1 rounded-full text-slate-500 shadow-sm shrink-0">
+                              <span class="material-icons text-xs block">directions_car</span>
+                           </div>
+                           <div class="overflow-hidden min-w-0">
+                              <div class="text-[10px] text-gray-400 font-bold uppercase leading-none mb-0.5">Vehicle</div>
+                              <div class="text-xs font-bold text-gray-700 truncate" title="{{em.vehicle_reg}}">
+                                {{em.vehicle_reg || 'Unknown'}}
+                              </div>
+                           </div>
                         </div>
-                        @if(em.assigned_mechanic) {
-                            <div class="flex items-center gap-1 text-blue-600">
-                                <span class="material-icons text-xs">person</span>
-                                <span class="font-semibold">{{em.assigned_mechanic}}</span>
-                            </div>
-                        } @else {
-                            <span class="italic text-gray-400">Unassigned</span>
-                        }
+
+                        <div class="bg-slate-50 p-2 rounded border border-slate-100 flex items-center gap-2">
+                           <div class="bg-white p-1 rounded-full shadow-sm shrink-0" [class.text-blue-500]="em.assigned_mechanic" [class.text-gray-300]="!em.assigned_mechanic">
+                              <span class="material-icons text-xs block">engineering</span>
+                           </div>
+                           <div class="overflow-hidden min-w-0">
+                              <div class="text-[10px] text-gray-400 font-bold uppercase leading-none mb-0.5">Mechanic</div>
+                              <div class="text-xs font-bold truncate" 
+                                   [class.text-blue-600]="em.assigned_mechanic" 
+                                   [class.text-gray-400]="!em.assigned_mechanic"
+                                   [class.italic]="!em.assigned_mechanic">
+                                {{em.assigned_mechanic || 'Pending...'}}
+                              </div>
+                           </div>
+                        </div>
                      </div>
 
-                     <div class="text-xs text-gray-400 mt-2 text-right">{{em.created_at | date:'mediumTime'}}</div>
+                     <div class="text-xs text-gray-400 mt-2 text-right group-hover:text-gray-600 transition font-mono">
+                        {{em.created_at | date:'mediumTime'}}
+                     </div>
                    </div>
                  }
               </div>
@@ -189,9 +207,28 @@ import { MapComponent } from './map.component';
           
           <!-- Fleet Table -->
           <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+            <div class="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
               <h2 class="font-bold text-lg text-slate-800">Fleet Status</h2>
-              <button class="text-blue-600 text-sm hover:underline">View All</button>
+              
+              <div class="flex gap-2 text-sm w-full sm:w-auto">
+                <!-- Filter Dropdown -->
+                <select [ngModel]="filterType()" (ngModelChange)="filterType.set($event)" 
+                        class="bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto">
+                  @for(type of vehicleTypes(); track type) {
+                    <option [value]="type">{{type}}</option>
+                  }
+                </select>
+
+                <!-- Sort Dropdown -->
+                <select [ngModel]="sortBy()" (ngModelChange)="sortBy.set($event)"
+                        class="bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto">
+                  <option value="default">Sort by: Default</option>
+                  <option value="type">Type (A-Z)</option>
+                  <option value="speed_desc">Speed (High to Low)</option>
+                  <option value="fuel_asc">Fuel (Low to High)</option>
+                  <option value="status">Status (Active First)</option>
+                </select>
+              </div>
             </div>
             
             <div class="overflow-x-auto">
@@ -206,7 +243,14 @@ import { MapComponent } from './map.component';
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                  @for (v of vehicles(); track v.id) {
+                  @if (filteredVehicles().length === 0) {
+                     <tr>
+                        <td colspan="5" class="px-6 py-10 text-center text-gray-400">
+                           No vehicles match your filter.
+                        </td>
+                     </tr>
+                  }
+                  @for (v of filteredVehicles(); track v.id) {
                     <tr class="hover:bg-slate-50 transition">
                       <td class="px-6 py-4">
                         <div class="font-medium text-slate-900">{{v.registration_number}}</div>
@@ -291,6 +335,10 @@ export class AdminDashboardComponent implements OnInit {
 
   mapMarkers = signal<any[]>([]);
 
+  // Filter/Sort State
+  filterType = signal<string>('All');
+  sortBy = signal<string>('default');
+
   // Computed Views
   pendingBookings = computed(() => this.bookings().filter(b => b.status === 'pending' || b.status === 'negotiating'));
   activeEmergencies = computed(() => this.emergencies().filter(e => e.status !== 'completed'));
@@ -298,6 +346,42 @@ export class AdminDashboardComponent implements OnInit {
   // Notification State
   toasts = signal<{id: string, title: string, msg: string, type: 'warning'|'danger'}[]>([]);
   private notifiedAlertIds = new Set<string>();
+
+  // Computed: Unique Vehicle Types for Dropdown
+  vehicleTypes = computed(() => {
+    const types = new Set(this.vehicles().map(v => v.type));
+    return ['All', ...Array.from(types).sort()];
+  });
+
+  // Computed: Filtered & Sorted List
+  filteredVehicles = computed(() => {
+    let list = [...this.vehicles()]; // Shallow copy
+
+    // 1. Filter
+    if (this.filterType() !== 'All') {
+      list = list.filter(v => v.type === this.filterType());
+    }
+
+    // 2. Sort
+    switch (this.sortBy()) {
+      case 'speed_desc':
+        list.sort((a, b) => b.speed - a.speed);
+        break;
+      case 'fuel_asc':
+        list.sort((a, b) => a.fuel_level - b.fuel_level);
+        break;
+      case 'status':
+        // Priority: Running > Idle > Stopped > Offline
+        const priority: Record<string, number> = { 'Running': 1, 'Idle': 2, 'Stopped': 3, 'Offline': 4 };
+        list.sort((a, b) => (priority[a.status] || 99) - (priority[b.status] || 99));
+        break;
+      case 'type':
+        list.sort((a, b) => a.type.localeCompare(b.type));
+        break;
+    }
+
+    return list;
+  });
 
   // Computed Alerts from Vehicles
   vehicleAlerts = computed(() => {

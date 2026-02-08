@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, inject } from '@angular/core';
 import { AuthService, UserRole } from '../services/auth.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -62,8 +62,10 @@ import { FormsModule } from '@angular/forms';
           </div>
 
           <div class="mb-8">
-            <h2 class="text-2xl font-bold text-gray-800 mb-2">Welcome Back</h2>
-            <p class="text-gray-500 text-sm">Please select your role to login.</p>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">{{isRegistering() ? 'Create Account' : 'Welcome Back'}}</h2>
+            <p class="text-gray-500 text-sm">
+              {{isRegistering() ? 'Join our platform as a new user.' : 'Please select your role to login.'}}
+            </p>
           </div>
 
           <!-- Role Tabs -->
@@ -88,8 +90,8 @@ import { FormsModule } from '@angular/forms';
             </button>
           </div>
 
-          <!-- Login Form -->
-          <form (submit)="login($event)" class="space-y-5">
+          <!-- Auth Form -->
+          <form (submit)="handleSubmit($event)" class="space-y-5">
             <div>
               <label class="block text-xs font-bold text-gray-700 uppercase mb-1.5 ml-1">Email Address</label>
               <div class="relative group">
@@ -104,47 +106,48 @@ import { FormsModule } from '@angular/forms';
               <label class="block text-xs font-bold text-gray-700 uppercase mb-1.5 ml-1">Password</label>
               <div class="relative group">
                 <span class="material-icons absolute left-3 top-3 text-gray-400 text-lg group-focus-within:text-blue-500 transition-colors">lock</span>
-                <input type="password" [(ngModel)]="password" name="password" required
+                <input type="password" [(ngModel)]="password" name="password" required minlength="6"
                        class="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white transition-all text-sm font-medium text-gray-800 placeholder:text-gray-400"
                        placeholder="••••••••">
               </div>
             </div>
 
-            <div class="flex items-center justify-between text-xs pt-1">
+            <div class="flex items-center justify-between text-xs pt-1" *ngIf="!isRegistering()">
                <label class="flex items-center gap-2 text-gray-600 cursor-pointer hover:text-gray-900 transition">
                  <input type="checkbox" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"> 
                  <span>Remember me</span>
                </label>
                <a href="#" class="text-blue-600 hover:text-blue-800 font-bold transition">Forgot Password?</a>
             </div>
+            
+            <div *ngIf="errorMsg" class="bg-red-50 text-red-600 text-xs p-3 rounded-lg border border-red-100 flex items-center gap-2">
+               <span class="material-icons text-sm">error</span> {{errorMsg}}
+            </div>
 
-            <button type="submit" 
+            <button type="submit" [disabled]="loading"
                     [class]="getButtonClass()"
-                    class="w-full py-3.5 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-[0.98] flex justify-center items-center gap-2 mt-4 group">
-              <span>Sign In as {{selectedRole() | titlecase}}</span>
-              <span class="material-icons text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
+                    class="w-full py-3.5 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-[0.98] flex justify-center items-center gap-2 mt-4 group disabled:opacity-50 disabled:cursor-not-allowed">
+              <span *ngIf="!loading">{{isRegistering() ? 'Create Account' : 'Sign In'}} as {{selectedRole() | titlecase}}</span>
+              <span *ngIf="loading" class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+              <span *ngIf="!loading" class="material-icons text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
             </button>
           </form>
           
           <div class="mt-8 flex items-center gap-4">
              <div class="h-px bg-gray-200 flex-1"></div>
-             <span class="text-[10px] text-gray-400 font-bold tracking-widest uppercase">Or continue with</span>
+             <span class="text-[10px] text-gray-400 font-bold tracking-widest uppercase">Or</span>
              <div class="h-px bg-gray-200 flex-1"></div>
           </div>
 
-          <div class="mt-6 grid grid-cols-2 gap-4">
-             <button class="flex items-center justify-center gap-2 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all active:bg-gray-100">
-                <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-5 h-5" alt="Google">
-                <span class="text-sm font-semibold text-gray-600">Google</span>
-             </button>
-             <button class="flex items-center justify-center gap-2 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all active:bg-gray-100">
-                <span class="material-icons text-gray-800 text-xl">apple</span>
-                <span class="text-sm font-semibold text-gray-600">Apple</span>
-             </button>
-          </div>
-          
-          <div class="mt-8 text-center text-sm text-gray-500">
-             Don't have an account? <a href="#" class="text-blue-600 font-bold hover:underline">Sign up for Gaadi Dost</a>
+          <div class="mt-6 text-center text-sm text-gray-500">
+             <ng-container *ngIf="!isRegistering()">
+                Don't have an account? 
+                <button (click)="toggleMode()" class="text-blue-600 font-bold hover:underline focus:outline-none">Sign up for Gaadi Dost</button>
+             </ng-container>
+             <ng-container *ngIf="isRegistering()">
+                Already have an account? 
+                <button (click)="toggleMode()" class="text-blue-600 font-bold hover:underline focus:outline-none">Sign In</button>
+             </ng-container>
           </div>
 
         </div>
@@ -153,45 +156,64 @@ import { FormsModule } from '@angular/forms';
   `
 })
 export class LoginComponent {
-  selectedRole = signal<UserRole>('driver');
+  auth = inject(AuthService);
+  
   email = '';
   password = '';
+  selectedRole = signal<UserRole>('driver');
+  isRegistering = signal(false);
+  loading = false;
+  errorMsg = '';
 
-  constructor(private auth: AuthService) {}
-
-  selectRole(role: UserRole) {
-    this.selectedRole.set(role);
-    // Clear form or set defaults
-    this.email = ''; 
-    this.password = '';
+  selectRole(role: string) {
+    this.selectedRole.set(role as UserRole);
   }
 
-  getButtonClass() {
-    const role = this.selectedRole();
-    if (role === 'driver') return 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-blue-200';
-    if (role === 'mechanic') return 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-orange-200';
-    return 'bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-800 hover:to-slate-900 shadow-slate-200';
+  toggleMode() {
+    this.isRegistering.update(v => !v);
+    this.errorMsg = '';
   }
 
   getPlaceholderEmail() {
-    const role = this.selectedRole();
-    if (role === 'driver') return 'driver@gaadi-dost.com';
-    if (role === 'mechanic') return 'mechanic@gaadi-dost.com';
-    return 'admin@gaadi-dost.com';
+    switch (this.selectedRole()) {
+      case 'driver': return 'driver@gaadidost.com';
+      case 'mechanic': return 'mechanic@gaadidost.com';
+      case 'admin': return 'admin@gaadidost.com';
+      default: return 'user@example.com';
+    }
   }
 
-  login(event: Event) {
+  getButtonClass() {
+    const base = "w-full py-3.5 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-[0.98] flex justify-center items-center gap-2 mt-4 group disabled:opacity-50 disabled:cursor-not-allowed";
+    switch (this.selectedRole()) {
+      case 'driver': return `${base} bg-blue-600 hover:bg-blue-700 shadow-blue-200`;
+      case 'mechanic': return `${base} bg-orange-600 hover:bg-orange-700 shadow-orange-200`;
+      case 'admin': return `${base} bg-slate-800 hover:bg-slate-900 shadow-slate-200`;
+      default: return `${base} bg-gray-600`;
+    }
+  }
+
+  async handleSubmit(event: Event) {
     event.preventDefault();
-    if (!this.email) {
-      // If user hit simple login without typing, simulate based on role
-      if (this.selectedRole() === 'driver') this.email = 'driver@gaadi.com';
-      if (this.selectedRole() === 'mechanic') this.email = 'mechanic@gaadi.com';
-      if (this.selectedRole() === 'admin') this.email = 'admin@gaadi.com';
+    if (!this.email || !this.password) {
+      this.errorMsg = 'Please fill in all fields';
+      return;
     }
 
-    const name = this.email.split('@')[0];
-    const formattedName = name.charAt(0).toUpperCase() + name.slice(1) + (this.email.includes('.') ? '' : ' User');
-    
-    this.auth.login(this.selectedRole(), formattedName);
+    this.loading = true;
+    this.errorMsg = '';
+
+    try {
+      if (this.isRegistering()) {
+        const name = this.email.split('@')[0];
+        await this.auth.register(this.email, this.password, this.selectedRole(), name);
+      } else {
+        await this.auth.login(this.email, this.password, this.selectedRole());
+      }
+    } catch (e: any) {
+      this.errorMsg = e.message || 'Authentication failed';
+    } finally {
+      this.loading = false;
+    }
   }
 }

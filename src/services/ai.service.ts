@@ -17,33 +17,52 @@ export class AiService {
     if (!cargoDesc) return null;
 
     try {
+      const prompt = `I have a ${vehicleType}. I need to transport: "${cargoDesc}". Distance is ${distanceKm}km in India.
+      1. Search for current logistics rates (Porter, Borzo, Uber Freight benchmarks) for this vehicle type and distance.
+      2. Estimate the load percentage (0-100).
+      3. Estimate fuel cost in INR.
+      4. Estimate a fair Market Price to charge in INR based on the search results.
+      5. Provide a safety rating (High/Medium/Low) and advice.
+      
+      Output ONLY a JSON object with this structure:
+      {
+        "loadPercentage": number,
+        "estimatedFuelCost": number,
+        "marketPrice": number,
+        "safetyRating": "string",
+        "advice": "string",
+        "marketComparison": "string (e.g. 'Competitors charge approx ₹X-₹Y')"
+      }`;
+
       const response = await this.ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `I have a ${vehicleType}. I need to transport: "${cargoDesc}". Distance is ${distanceKm}km. 
-                   Estimate the load percentage (0-100), estimated fuel cost in INR, and a safety rating (High/Medium/Low).`,
+        contents: prompt,
         config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              loadPercentage: { type: Type.NUMBER },
-              estimatedCost: { type: Type.NUMBER },
-              safetyRating: { type: Type.STRING },
-              advice: { type: Type.STRING }
-            }
-          }
+          tools: [{ googleSearch: {} }] // Enable Grounding for real-time price checks
         }
       });
 
-      return JSON.parse(response.text);
+      let text = response.text || '';
+      // Clean up markdown if present
+      text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      
+      const jsonStart = text.indexOf('{');
+      const jsonEnd = text.lastIndexOf('}');
+      
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        return JSON.parse(text.substring(jsonStart, jsonEnd + 1));
+      }
+      throw new Error('No valid JSON found in response');
     } catch (error) {
       console.error('AI Estimation failed', error);
       // Fallback mock response if AI fails or key is missing
       return {
         loadPercentage: 75,
-        estimatedCost: distanceKm * 15,
+        estimatedFuelCost: distanceKm * 8,
+        marketPrice: distanceKm * 25,
         safetyRating: 'Medium',
-        advice: 'Ensure cargo is strapped down securely. AI service unavailable.'
+        advice: 'Ensure cargo is strapped down securely. Real-time market data unavailable.',
+        marketComparison: 'Offline estimate'
       };
     }
   }
