@@ -3,6 +3,7 @@ import { LoginComponent } from './components/login.component';
 import { DriverDashboardComponent } from './components/driver-dashboard.component';
 import { MechanicDashboardComponent } from './components/mechanic-dashboard.component';
 import { AdminDashboardComponent } from './components/admin-dashboard.component';
+import { TestConnectionComponent } from './components/test-connection.component';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'login', pathMatch: 'full' },
@@ -10,4 +11,5 @@ export const routes: Routes = [
   { path: 'driver', component: DriverDashboardComponent },
   { path: 'mechanic', component: MechanicDashboardComponent },
   { path: 'admin', component: AdminDashboardComponent },
+  { path: 'test-connection', component: TestConnectionComponent },
 ];
