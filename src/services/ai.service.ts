@@ -99,7 +99,11 @@ export class AiService {
     try {
       const response = await this.ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Assess the suitability of a "${vehicleType}" carrying "${material}" (${weight}). Give a very short, 1-sentence assessment (max 15 words) regarding suitability or profitability.`,
+        contents: `You are a logistics expert assistant for a driver driving a ${vehicleType}.
+        Cargo Material: "${material}"
+        Cargo Weight: ${weight}
+        
+        Provide a 1-sentence assessment (max 20 words) on whether this load is suitable, safe, and profitable for the vehicle. Be concise and helpful.`,
       });
       return response.text.trim();
     } catch (e) {

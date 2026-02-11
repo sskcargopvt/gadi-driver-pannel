@@ -1,14 +1,15 @@
-import { Component, inject, signal, computed, OnInit, effect } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, effect, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
-import { SupabaseService, Vehicle } from '../services/supabase.service';
+import { SupabaseService, Vehicle, UserProfile } from '../services/supabase.service';
 import { MapComponent } from './map.component';
 
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
   imports: [CommonModule, MapComponent, FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="min-h-screen bg-slate-100 relative">
       <!-- Toast Notifications Container -->
@@ -246,11 +247,19 @@ import { MapComponent } from './map.component';
                 <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
                   <tr>
                     <th class="px-6 py-3 font-semibold">Vehicle</th>
-                    <th class="px-6 py-3 font-semibold">Owner ID</th>
+                    <th class="px-6 py-3 font-semibold">
+                      <div class="flex items-center gap-1">
+                        Owner <span class="material-icons text-xs text-slate-400">badge</span>
+                      </div>
+                    </th>
                     <th class="px-6 py-3 font-semibold">Status</th>
                     <th class="px-6 py-3 font-semibold">Speed</th>
                     <th class="px-6 py-3 font-semibold">Fuel</th>
-                    <th class="px-6 py-3 font-semibold">Last Updated</th>
+                    <th class="px-6 py-3 font-semibold">
+                       <div class="flex items-center gap-1">
+                         Last Updated <span class="material-icons text-xs text-slate-400">update</span>
+                       </div>
+                    </th>
                     <th class="px-6 py-3 font-semibold">Actions</th>
                   </tr>
                 </thead>
@@ -272,7 +281,12 @@ import { MapComponent } from './map.component';
                         <div class="text-xs font-bold text-slate-500 bg-slate-100 inline-block px-1.5 py-0.5 rounded mt-1">{{v.type}}</div>
                       </td>
                       <td class="px-6 py-4 text-sm text-slate-500 font-mono">
-                         {{v.owner_id || '-'}}
+                         <div class="flex items-center gap-2">
+                           <div class="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs text-slate-400 font-bold border border-slate-200">
+                              {{ (v.owner_id || '?').charAt(0) }}
+                           </div>
+                           <span>{{v.owner_id || 'Unassigned'}}</span>
+                         </div>
                       </td>
                       <td class="px-6 py-4">
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold"
@@ -311,10 +325,15 @@ import { MapComponent } from './map.component';
                       <td class="px-6 py-4 text-xs text-slate-500">
                          {{v.last_updated | date:'mediumTime'}}
                       </td>
-                      <td class="px-6 py-4 text-sm">
-                        <button class="text-slate-400 hover:text-blue-600 transition p-2 hover:bg-blue-50 rounded-full">
-                          <span class="material-icons text-base">visibility</span>
-                        </button>
+                      <td class="px-6 py-4 text-sm flex items-center gap-2">
+                         <button (click)="locateVehicle(v)" 
+                                 class="text-blue-500 hover:text-blue-700 transition p-2 hover:bg-blue-50 rounded-full" 
+                                 title="Locate on Map">
+                           <span class="material-icons text-base">my_location</span>
+                         </button>
+                         <button class="text-slate-400 hover:text-blue-600 transition p-2 hover:bg-blue-50 rounded-full" title="View Details">
+                           <span class="material-icons text-base">visibility</span>
+                         </button>
                       </td>
                     </tr>
                   }
@@ -331,11 +350,67 @@ import { MapComponent } from './map.component';
               </h2>
             </div>
             <div class="flex-1 bg-slate-100 relative">
-               <app-map [center]="{lat: 20, lng: 78}" [markers]="mapMarkers()"></app-map>
+               <app-map [center]="mapCenter()" [markers]="mapMarkers()"></app-map>
             </div>
           </div>
-
         </div>
+
+        <!-- User Management Section -->
+        <div class="mt-8 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+            <h2 class="font-bold text-lg text-slate-800 flex items-center gap-2">
+              <span class="material-icons text-purple-600">manage_accounts</span> User Access Control
+            </h2>
+            <button (click)="addUser()" class="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm hover:bg-purple-700 transition">
+              + Add User
+            </button>
+          </div>
+          
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead class="bg-slate-50 text-slate-500 font-bold uppercase text-xs">
+                <tr>
+                  <th class="px-6 py-3">User</th>
+                  <th class="px-6 py-3">Role</th>
+                  <th class="px-6 py-3">Last Active</th>
+                  <th class="px-6 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                @for(user of users(); track user.id) {
+                  <tr class="hover:bg-slate-50 transition">
+                    <td class="px-6 py-4">
+                      <div class="font-bold text-slate-800">{{user.name}}</div>
+                      <div class="text-xs text-slate-500">{{user.email}}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                      <select [ngModel]="user.role" (ngModelChange)="updateRole(user.id, $event)"
+                              class="bg-white border border-slate-200 rounded px-2 py-1 text-xs font-bold uppercase shadow-sm focus:ring-2 focus:ring-purple-500 outline-none cursor-pointer"
+                              [class.text-blue-600]="user.role === 'driver'"
+                              [class.text-orange-600]="user.role === 'mechanic'"
+                              [class.text-purple-800]="user.role === 'admin'"
+                              [class.text-gray-500]="user.role === 'user'">
+                         <option value="admin">Admin</option>
+                         <option value="driver">Driver</option>
+                         <option value="mechanic">Mechanic</option>
+                         <option value="user">User (No Access)</option>
+                      </select>
+                    </td>
+                    <td class="px-6 py-4 text-slate-500 font-mono text-xs">
+                       {{user.last_active | date:'short'}}
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                      <button (click)="deleteUser(user.id)" class="text-red-500 hover:bg-red-50 p-2 rounded-full transition" title="Delete User">
+                        <span class="material-icons text-base">delete_outline</span>
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
     </div>
   `
@@ -346,10 +421,14 @@ export class AdminDashboardComponent implements OnInit {
   
   // Realtime Data Signals
   vehicles = signal<Vehicle[]>([]);
+  users = signal<UserProfile[]>([]);
   bookings = this.supabase.mockBookings;
   emergencies = this.supabase.mockEmergencies;
 
   mapMarkers = signal<any[]>([]);
+
+  // ADDED: Map Center Signal
+  mapCenter = signal<{lat: number, lng: number}>({lat: 20.5937, lng: 78.9629});
 
   // Filter/Sort State
   filterType = signal<string>('All');
@@ -484,6 +563,11 @@ export class AdminDashboardComponent implements OnInit {
     setInterval(() => this.refresh(), 2000);
   }
 
+  // ADDED: Locate Vehicle Method
+  locateVehicle(v: Vehicle) {
+    this.mapCenter.set({ lat: v.lat, lng: v.lng });
+  }
+
   showNotification(alert: any) {
     const type = alert.type === 'Overspeeding' ? 'danger' : 'warning';
     
@@ -521,6 +605,9 @@ export class AdminDashboardComponent implements OnInit {
     const data = await this.supabase.getVehicles();
     this.vehicles.set(data);
     
+    const users = await this.supabase.getUsers();
+    this.users.set(users);
+    
     // Update Map Markers 
     const markers = [];
     
@@ -546,5 +633,31 @@ export class AdminDashboardComponent implements OnInit {
     });
 
     this.mapMarkers.set(markers);
+  }
+  
+  async updateRole(id: string, newRole: any) {
+    await this.supabase.updateUserRole(id, newRole);
+    const users = await this.supabase.getUsers();
+    this.users.set(users);
+  }
+
+  async deleteUser(id: string) {
+    if(confirm('Are you sure you want to delete this user?')) {
+      await this.supabase.deleteUser(id);
+      const users = await this.supabase.getUsers();
+      this.users.set(users);
+    }
+  }
+
+  addUser() {
+    const newUser: UserProfile = {
+      id: crypto.randomUUID(),
+      email: `user${Math.floor(Math.random()*1000)}@gaadidost.com`,
+      name: 'New User',
+      role: 'user',
+      last_active: new Date().toISOString()
+    };
+    this.supabase.mockUsers.update(u => [...u, newUser]);
+    this.refresh();
   }
 }

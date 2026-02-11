@@ -8,7 +8,7 @@ declare var L: any;
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div #mapContainer class="w-full h-full rounded-lg shadow-inner bg-gray-200"></div>
+    <div #mapContainer class="w-full h-full rounded-lg shadow-inner bg-gray-200 z-0 relative"></div>
   `,
   styles: [`
     :host { display: block; height: 100%; width: 100%; }
@@ -22,33 +22,40 @@ export class MapComponent implements AfterViewInit, OnDestroy {
   
   private map: any;
   private markerLayer: any;
+  private isInitialized = false;
 
   constructor() {
+    // Effect to handle Center updates (Live Tracking)
     effect(() => {
       const c = this.center();
-      if (this.map && typeof L !== 'undefined') {
-        this.map.setView([c.lat, c.lng], 13);
+      if (this.map && typeof L !== 'undefined' && this.isInitialized) {
+        // Use panTo for smooth animation which maintains user's zoom level
+        this.map.panTo([c.lat, c.lng], { animate: true, duration: 1.0 });
       }
     });
 
+    // Effect to handle Marker updates
     effect(() => {
       const ms = this.markers();
       if (this.map && this.markerLayer && typeof L !== 'undefined') {
         this.markerLayer.clearLayers();
         ms.forEach(m => {
-          let color = 'blue';
-          if (m.type === 'emergency') color = 'red';
-          if (m.type === 'pickup') color = 'green';
-          if (m.type === 'drop') color = 'red'; // Drop is usually destination red
-          if (m.type === 'vehicle') color = '#2563eb'; // Blue-600
+          let color = '#2563eb'; // blue-600
+          if (m.type === 'emergency') color = '#dc2626'; // red-600
+          if (m.type === 'pickup') color = '#16a34a'; // green-600
+          if (m.type === 'drop') color = '#dc2626'; // red-600
+          
+          // Vehicle marker is slightly larger
+          const radius = m.type === 'vehicle' ? 10 : 8;
+          const fillOpacity = m.type === 'vehicle' ? 0.9 : 0.8;
 
           L.circleMarker([m.lat, m.lng], {
-            radius: 8,
+            radius: radius,
             fillColor: color,
             color: '#fff',
             weight: 2,
             opacity: 1,
-            fillOpacity: 0.8
+            fillOpacity: fillOpacity
           }).bindPopup(m.title).addTo(this.markerLayer);
         });
       }
@@ -81,14 +88,20 @@ export class MapComponent implements AfterViewInit, OnDestroy {
     }
 
     try {
-      this.map = L.map(this.mapContainer.nativeElement).setView([this.center().lat, this.center().lng], 5);
+      this.map = L.map(this.mapContainer.nativeElement, {
+        zoomControl: false // Custom position
+      }).setView([this.center().lat, this.center().lng], 13);
+
+      L.control.zoom({ position: 'bottomright' }).addTo(this.map);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(this.map);
 
       this.markerLayer = L.layerGroup().addTo(this.map);
+      this.isInitialized = true;
       
+      // Fix for map not sizing correctly initially
       setTimeout(() => {
         this.map.invalidateSize();
       }, 100);

@@ -18,6 +18,11 @@ export interface Vehicle {
   lng: number;
   last_updated: string;
   owner_id?: string;
+  // New Health Metrics
+  tire_pressure: number; // PSI
+  engine_temp: number; // Celsius
+  oil_life: number; // Percentage
+  last_service_date: string;
 }
 
 export interface EmergencyRequest {
@@ -45,7 +50,7 @@ export interface BookingRequest {
   weight: string;
   offered_price: number;
   counter_offer?: number;
-  status: 'pending' | 'accepted' | 'rejected' | 'bargaining' | 'completed';
+  status: 'pending' | 'accepted' | 'rejected' | 'bargaining' | 'completed' | 'cancelled';
   pickup_lat: number;
   pickup_lng: number;
   drop_lat: number;
@@ -68,6 +73,14 @@ export interface Load {
   company: string;
   status: 'available' | 'requested';
   ai_assessment?: string;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'driver' | 'mechanic' | 'user';
+  last_active: string;
 }
 
 @Injectable({
@@ -95,7 +108,11 @@ export class SupabaseService {
       lat: 12.9716,
       lng: 77.5946,
       last_updated: new Date().toISOString(),
-      owner_id: 'DRV-101'
+      owner_id: 'DRV-101',
+      tire_pressure: 35,
+      engine_temp: 90,
+      oil_life: 45,
+      last_service_date: '2023-12-15'
     },
     {
       id: 'v2',
@@ -109,7 +126,47 @@ export class SupabaseService {
       lat: 19.0760,
       lng: 72.8777,
       last_updated: new Date().toISOString(),
-      owner_id: 'DRV-205'
+      owner_id: 'DRV-205',
+      tire_pressure: 32,
+      engine_temp: 65,
+      oil_life: 82,
+      last_service_date: '2024-01-20'
+    },
+    {
+      id: 'v3',
+      registration_number: 'TN-09-CD-5678',
+      type: 'Car',
+      status: 'Running',
+      speed: 45,
+      fuel_level: 60,
+      battery_level: 95,
+      ignition: true,
+      lat: 13.0827,
+      lng: 80.2707,
+      last_updated: new Date().toISOString(),
+      owner_id: 'DRV-303',
+      tire_pressure: 33,
+      engine_temp: 88,
+      oil_life: 70,
+      last_service_date: '2024-02-10'
+    },
+    {
+      id: 'v4',
+      registration_number: 'DL-01-XY-0001',
+      type: 'Truck',
+      status: 'Stopped',
+      speed: 0,
+      fuel_level: 15,
+      battery_level: 40,
+      ignition: false,
+      lat: 28.7041,
+      lng: 77.1025,
+      last_updated: new Date().toISOString(),
+      owner_id: 'DRV-404',
+      tire_pressure: 34,
+      engine_temp: 40,
+      oil_life: 10,
+      last_service_date: '2023-11-05'
     }
   ]);
 
@@ -127,6 +184,15 @@ export class SupabaseService {
       messages: [],
       vehicle_reg: 'KA-01-HH-1234'
     }
+  ]);
+
+  // Mock Users for Admin Management
+  mockUsers = signal<UserProfile[]>([
+    { id: 'u1', email: 'admin@gaadidost.com', name: 'Super Admin', role: 'admin', last_active: new Date().toISOString() },
+    { id: 'u2', email: 'driver1@gaadidost.com', name: 'Ramesh Driver', role: 'driver', last_active: new Date().toISOString() },
+    { id: 'u3', email: 'mech1@gaadidost.com', name: 'Suresh Mechanic', role: 'mechanic', last_active: new Date().toISOString() },
+    { id: 'u4', email: 'newuser@gmail.com', name: 'Rahul Kumar', role: 'user', last_active: new Date().toISOString() },
+    { id: 'u5', email: 'driver2@gaadidost.com', name: 'Vijay Singh', role: 'driver', last_active: new Date().toISOString() },
   ]);
 
   // Alias for backward compatibility, though we prefer liveBookings now
@@ -177,58 +243,38 @@ export class SupabaseService {
   subscribeToBookingRequests() {
     if (this.bookingChannel) return;
 
-    // ✅ CHANGED: Use broadcast instead of postgres_changes
-    const topic = 'booking_requests';
-    this.bookingChannel = this.supabase.channel(topic, { 
-      config: { private: true, broadcast: { self: false } }
-    });
+    // FIX: Listen to 'postgres_changes' on the public table.
+    // This captures the row INSERTs that createBooking performs.
+    this.bookingChannel = this.supabase.channel('public:booking_requests');
     
     this.bookingChannel
-      .on('broadcast', { event: '*' }, (payload: any) => {
-        console.log('📢 Booking broadcast received:', payload);
-        
-        // FIX: Handle actual Supabase broadcast structure
-        const eventType = payload.event || payload.type;
-        const data = payload.payload || payload.new || payload;
-        
-        console.log('Event type:', eventType);
-        console.log('Data:', data);
-        
-        // Treat all events as potential updates/inserts if we can extract a row
-        if (data) {
-           // Flatten data if it's wrapped in 'new' or 'new_row'
-           const bookingData = data.new || data.new_row || data;
-           
-           if (bookingData && bookingData.id) {
-               const newBooking = this.mapToBookingRequest(bookingData);
-               
-               // Check if already exists
-               const exists = this.liveBookings().some(b => b.id === newBooking.id);
-               
-               if (!exists) {
-                  // Insert
-                  this.liveBookings.update(bookings => [newBooking, ...bookings]);
-                  console.log('✅ New booking added:', newBooking.id);
-                  if (this.showNotification) {
-                      this.showNotification('New Booking Request!', `${newBooking.customer_name} - ${newBooking.pickup_location}`);
-                  }
-               } else {
-                  // Update existing
-                  this.liveBookings.update(bookings => 
-                     bookings.map(b => b.id === newBooking.id ? { ...b, ...newBooking } : b)
-                  );
-                  console.log('🔄 Booking updated:', newBooking.id);
-               }
-           }
-        }
+      .on(
+        'postgres_changes', 
+        { event: '*', schema: 'public', table: 'booking_requests' }, 
+        (payload) => {
+          console.log('📢 Realtime Change received:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            const newRow = payload.new;
+            const newBooking = this.mapToBookingRequest(newRow);
+            
+            // Avoid duplicates if optimistic update already added it
+            if (!this.liveBookings().some(b => b.id === newBooking.id)) {
+               this.liveBookings.update(bookings => [newBooking, ...bookings]);
+               this.showNotification('New Booking Request!', `${newBooking.customer_name} - ${newBooking.pickup_location}`);
+            }
+          } 
+          else if (payload.eventType === 'UPDATE') {
+            const newRow = payload.new;
+            const updatedBooking = this.mapToBookingRequest(newRow);
+            this.liveBookings.update(bookings => 
+               bookings.map(b => b.id === updatedBooking.id ? updatedBooking : b)
+            );
+          }
       })
       .subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
-          console.log('✅ Subscribed to booking_requests topic (broadcast mode)');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Channel error - check RLS policies and authentication');
-        } else {
-          console.log('📡 Channel status:', status);
+          console.log('✅ Subscribed to booking_requests (postgres_changes)');
         }
       });
   }
@@ -242,11 +288,17 @@ export class SupabaseService {
 
   async createBooking(booking: Partial<BookingRequest>) {
     const newBooking = {
-      // Allow Supabase to generate ID or use provided
+      // Allow Supabase to generate ID or use provided if simulation
+      id: booking.id || crypto.randomUUID(),
       ...booking,
       status: 'pending',
       created_at: new Date().toISOString()
     };
+
+    // OPTIMISTIC UPDATE: Update local state immediately
+    // This ensures the Driver App sees the request even if realtime is slow/disconnected
+    const mappedBooking = this.mapToBookingRequest(newBooking);
+    this.liveBookings.update(prev => [mappedBooking, ...prev]);
 
     const { data, error } = await this.supabase
       .from('booking_requests')
@@ -255,8 +307,9 @@ export class SupabaseService {
       .single();
 
     if (error) {
-      console.error('Error creating booking:', error);
-      throw error;
+      console.error('Error creating booking in DB:', error);
+      // Optional: Rollback logic here if needed
+      // throw error; // Don't crash the simulation
     }
     return data;
   }
@@ -339,6 +392,31 @@ export class SupabaseService {
     return data;
   }
 
+  async cancelBooking(bookingId: string, reason: string) {
+    // Optimistic Update
+    this.liveBookings.update(bookings => 
+      bookings.map(b => b.id === bookingId ? { ...b, status: 'cancelled' } : b)
+    );
+
+    const { data, error } = await this.supabase
+      .from('booking_requests')
+      .update({
+        status: 'cancelled',
+        driver_response: `Cancelled by driver. Reason: ${reason}`,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error cancelling booking:', error);
+      this.getBookings();
+      throw error;
+    }
+    return data;
+  }
+
   private showNotification(title: string, body: string) {
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification(title, { body, icon: 'https://cdn-icons-png.flaticon.com/512/741/741407.png' });
@@ -398,6 +476,19 @@ export class SupabaseService {
     } catch (e) {
       return this.mockVehicles();
     }
+  }
+
+  async getUsers(): Promise<UserProfile[]> {
+    // In a real app, this might query a 'profiles' table or use Admin Auth API
+    return this.mockUsers();
+  }
+
+  async updateUserRole(uid: string, newRole: 'admin' | 'driver' | 'mechanic' | 'user') {
+    this.mockUsers.update(users => users.map(u => u.id === uid ? { ...u, role: newRole } : u));
+  }
+
+  async deleteUser(uid: string) {
+    this.mockUsers.update(users => users.filter(u => u.id !== uid));
   }
 
   async getEmergencies(): Promise<EmergencyRequest[]> {
@@ -494,7 +585,6 @@ export class SupabaseService {
     } catch (e) {}
   }
 
-  // Kept for legacy internal calls, delegates to counterOffer/acceptBooking where possible or does local update
   async respondToBooking(id: string, action: 'accept' | 'reject', driverId: string, counterPrice?: number) {
     if (action === 'accept') {
        if (counterPrice) await this.counterOffer(id, counterPrice);
@@ -526,7 +616,7 @@ export class SupabaseService {
   }
 
   subscribeToBookings() {
-    this.subscribeToBookingRequests(); // Delegate to new method
+    this.subscribeToBookingRequests(); 
   }
 
   subscribeToEmergencies() {
@@ -559,7 +649,9 @@ export class SupabaseService {
               lat: v.lat + (Math.random() - 0.5) * 0.001,
               lng: v.lng + (Math.random() - 0.5) * 0.001,
               speed: Math.max(0, Math.min(120, v.speed + (Math.random() - 0.5) * 20)),
-              fuel_level: Math.max(0, parseFloat((v.fuel_level - (Math.random() * 0.5)).toFixed(1)))
+              fuel_level: Math.max(0, parseFloat((v.fuel_level - (Math.random() * 0.5)).toFixed(1))),
+              // Simulate fluctuating engine temp
+              engine_temp: Math.min(110, Math.max(85, v.engine_temp + (Math.random() - 0.5) * 2))
             };
           }
           return v;
