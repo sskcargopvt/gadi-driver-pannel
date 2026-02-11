@@ -236,6 +236,27 @@ export class SupabaseService {
     }
   }
 
+  async createBooking(booking: Partial<BookingRequest>) {
+    const newBooking = {
+      // Allow Supabase to generate ID or use provided
+      ...booking,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+
+    const { data, error } = await this.supabase
+      .from('booking_requests')
+      .insert(newBooking)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating booking:', error);
+      throw error;
+    }
+    return data;
+  }
+
   async acceptBooking(bookingId: string, driverId: string) {
     // Optimistic Update
     this.liveBookings.update(bookings => 

@@ -212,6 +212,13 @@ import { FormsModule } from '@angular/forms';
                <span class="text-[10px] text-gray-400">Syncing with server...</span>
             </div>
 
+            <!-- Test Tool -->
+            <div class="flex justify-end">
+              <button (click)="simulateCustomerRequest()" class="bg-green-700 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-green-800 shadow transition flex items-center gap-2">
+                <span class="material-icons text-sm">add_circle</span> Simulate Customer Request
+              </button>
+            </div>
+
             @if(pendingRequests().length === 0) {
               <div class="text-center py-10 text-gray-400">
                 <span class="material-icons text-5xl mb-2 text-gray-300">notifications_none</span>
@@ -726,5 +733,41 @@ export class DriverDashboardComponent implements OnDestroy {
 
   requestLoad(loadId: string) {
     this.supabase.requestLoad(loadId);
+  }
+
+  async simulateCustomerRequest() {
+    try {
+      // Generate random location near Bangalore (approx center 12.97, 77.59)
+      const latBase = 12.9716;
+      const lngBase = 77.5946;
+      const r = () => (Math.random() - 0.5) * 0.1; // +/- 0.05 degrees (~5km)
+
+      const pickupLat = latBase + r();
+      const pickupLng = lngBase + r();
+      const dropLat = latBase + r();
+      const dropLng = lngBase + r();
+
+      const goods = ['Furniture', 'Electronics', 'Machinery', 'Textiles', 'Groceries', 'Auto Parts'];
+      const randomGood = goods[Math.floor(Math.random() * goods.length)];
+
+      await this.supabase.createBooking({
+        customer_name: 'Customer ' + Math.floor(Math.random() * 1000),
+        customer_phone: '+91 9' + Math.floor(Math.random() * 1000000000),
+        pickup_location: `Lat: ${pickupLat.toFixed(3)}, Lng: ${pickupLng.toFixed(3)}`,
+        drop_location: `Lat: ${dropLat.toFixed(3)}, Lng: ${dropLng.toFixed(3)}`,
+        goods_type: randomGood,
+        weight: (10 + Math.floor(Math.random() * 500)) + 'kg',
+        offered_price: 500 + Math.floor(Math.random() * 2500),
+        pickup_lat: pickupLat,
+        pickup_lng: pickupLng,
+        drop_lat: dropLat,
+        drop_lng: dropLng,
+        status: 'pending'
+      });
+      // The realtime subscription will pick this up and update the UI
+    } catch (e) {
+      console.error(e);
+      alert('Failed to simulate request');
+    }
   }
 }
