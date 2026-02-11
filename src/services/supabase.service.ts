@@ -455,6 +455,15 @@ export class SupabaseService {
     return await this.supabase.auth.signInWithPassword({ email, password });
   }
 
+  async signInWithGoogle() {
+    return await this.supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin
+      }
+    });
+  }
+
   async signUp(email: string, password: string, data: any) {
     return await this.supabase.auth.signUp({ email, password, options: { data } });
   }

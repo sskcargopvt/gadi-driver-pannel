@@ -1,4 +1,4 @@
-import { Component, signal, inject } from '@angular/core';
+import { Component, signal, inject, effect } from '@angular/core';
 import { AuthService, UserRole } from '../services/auth.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -132,6 +132,20 @@ import { FormsModule } from '@angular/forms';
               <span *ngIf="!loading" class="material-icons text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
             </button>
           </form>
+
+          <!-- OR Divider -->
+          <div class="mt-6 flex items-center gap-4">
+             <div class="h-px bg-gray-200 flex-1"></div>
+             <span class="text-[10px] text-gray-400 font-bold tracking-widest uppercase">Or</span>
+             <div class="h-px bg-gray-200 flex-1"></div>
+          </div>
+
+          <!-- Google Button -->
+          <button type="button" (click)="handleGoogleLogin()"
+                  class="w-full mt-6 py-3 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-bold flex items-center justify-center gap-3 transition shadow-sm hover:shadow active:scale-[0.98]">
+             <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-5 h-5" alt="Google">
+             Sign in with Google
+          </button>
           
           <div class="mt-8 flex items-center gap-4">
              <div class="h-px bg-gray-200 flex-1"></div>
@@ -164,6 +178,15 @@ export class LoginComponent {
   isRegistering = signal(false);
   loading = false;
   errorMsg = '';
+
+  constructor() {
+    effect(() => {
+      // Auto-redirect if user is already logged in (e.g. from session persistence or OAuth redirect)
+      if (this.auth.currentUser()) {
+        this.auth.redirectUser();
+      }
+    });
+  }
 
   selectRole(role: string) {
     this.selectedRole.set(role as UserRole);
@@ -215,5 +238,12 @@ export class LoginComponent {
     } finally {
       this.loading = false;
     }
+  }
+
+  async handleGoogleLogin() {
+    this.loading = true;
+    await this.auth.loginWithGoogle();
+    // Redirect happens automatically or via the effect, so we don't necessarily reset loading false
+    this.loading = false;
   }
 }

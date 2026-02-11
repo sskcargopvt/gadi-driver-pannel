@@ -60,6 +60,15 @@ export class AuthService {
     }
   }
 
+  async loginWithGoogle() {
+    try {
+      const { error } = await this.supabase.signInWithGoogle();
+      if (error) throw error;
+    } catch (e) {
+      console.error('Google login failed', e);
+    }
+  }
+
   async register(email: string, password: string, role: UserRole, name: string) {
     try {
       const { data, error } = await this.supabase.signUp(email, password, { role, name });
@@ -90,7 +99,7 @@ export class AuthService {
     this.router.navigate(['/login']);
   }
 
-  private redirectUser() {
+  public redirectUser() {
     const role = this.currentUser()?.role;
     if (role === 'driver') this.router.navigate(['/driver']);
     else if (role === 'mechanic') this.router.navigate(['/mechanic']);
