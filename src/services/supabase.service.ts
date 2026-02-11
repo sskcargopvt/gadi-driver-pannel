@@ -17,6 +17,7 @@ export interface Vehicle {
   lat: number;
   lng: number;
   last_updated: string;
+  owner_id?: string;
 }
 
 export interface EmergencyRequest {
@@ -93,7 +94,8 @@ export class SupabaseService {
       ignition: true,
       lat: 12.9716,
       lng: 77.5946,
-      last_updated: new Date().toISOString()
+      last_updated: new Date().toISOString(),
+      owner_id: 'DRV-101'
     },
     {
       id: 'v2',
@@ -106,7 +108,8 @@ export class SupabaseService {
       ignition: false,
       lat: 19.0760,
       lng: 72.8777,
-      last_updated: new Date().toISOString()
+      last_updated: new Date().toISOString(),
+      owner_id: 'DRV-205'
     }
   ]);
 
@@ -181,41 +184,42 @@ export class SupabaseService {
     });
     
     this.bookingChannel
-      // ✅ CHANGED: Listen to 'broadcast' events instead of 'postgres_changes'
       .on('broadcast', { event: '*' }, (payload: any) => {
         console.log('📢 Booking broadcast received:', payload);
         
-        // ✅ CHANGED: Normalize payload from DB trigger
-        const type = payload.type || payload.event;
-        const newRow = payload.new ?? payload.new_row ?? payload.payload;
-        const oldRow = payload.old ?? payload.old_row;
-
-        if (type === 'INSERT' && newRow) {
-          // New booking request from customer
-          const newBooking: BookingRequest = this.mapToBookingRequest(newRow);
-          this.liveBookings.update(bookings => [newBooking, ...bookings]);
-          // Also show notification if you have that method
-          if (this.showNotification) {
-              this.showNotification(
-                'New Booking Request!', 
-                `${newBooking.customer_name} - ${newBooking.pickup_location}`
-              );
-          }
-          console.log('✅ New booking added:', newBooking.id);
-        } 
-        else if (type === 'UPDATE' && newRow) {
-          // Booking updated (customer responded, etc.)
-          this.liveBookings.update(bookings =>
-            bookings.map(b => b.id === newRow.id ? { ...b, ...this.mapToBookingRequest(newRow) } : b)
-          );
-          console.log('🔄 Booking updated:', newRow.id);
-        } 
-        else if (type === 'DELETE' && oldRow) {
-          // Booking deleted/cancelled
-          this.liveBookings.update(bookings =>
-            bookings.filter(b => b.id !== oldRow.id)
-          );
-          console.log('🗑️ Booking deleted:', oldRow.id);
+        // FIX: Handle actual Supabase broadcast structure
+        const eventType = payload.event || payload.type;
+        const data = payload.payload || payload.new || payload;
+        
+        console.log('Event type:', eventType);
+        console.log('Data:', data);
+        
+        // Treat all events as potential updates/inserts if we can extract a row
+        if (data) {
+           // Flatten data if it's wrapped in 'new' or 'new_row'
+           const bookingData = data.new || data.new_row || data;
+           
+           if (bookingData && bookingData.id) {
+               const newBooking = this.mapToBookingRequest(bookingData);
+               
+               // Check if already exists
+               const exists = this.liveBookings().some(b => b.id === newBooking.id);
+               
+               if (!exists) {
+                  // Insert
+                  this.liveBookings.update(bookings => [newBooking, ...bookings]);
+                  console.log('✅ New booking added:', newBooking.id);
+                  if (this.showNotification) {
+                      this.showNotification('New Booking Request!', `${newBooking.customer_name} - ${newBooking.pickup_location}`);
+                  }
+               } else {
+                  // Update existing
+                  this.liveBookings.update(bookings => 
+                     bookings.map(b => b.id === newBooking.id ? { ...b, ...newBooking } : b)
+                  );
+                  console.log('🔄 Booking updated:', newBooking.id);
+               }
+           }
         }
       })
       .subscribe((status: string) => {

@@ -208,26 +208,36 @@ import { MapComponent } from './map.component';
           <!-- Fleet Table -->
           <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-              <h2 class="font-bold text-lg text-slate-800">Fleet Status</h2>
+              <h2 class="font-bold text-lg text-slate-800 flex items-center gap-2">
+                <span class="material-icons text-slate-400">directions_bus</span> Fleet Status
+              </h2>
               
               <div class="flex gap-2 text-sm w-full sm:w-auto">
                 <!-- Filter Dropdown -->
-                <select [ngModel]="filterType()" (ngModelChange)="filterType.set($event)" 
-                        class="bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto">
-                  @for(type of vehicleTypes(); track type) {
-                    <option [value]="type">{{type}}</option>
-                  }
-                </select>
+                <div class="relative w-full sm:w-auto">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-sm pointer-events-none">filter_list</span>
+                  <select [ngModel]="filterType()" (ngModelChange)="filterType.set($event)" 
+                          class="bg-white border border-slate-200 text-slate-700 rounded-lg pl-9 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full font-medium shadow-sm appearance-none cursor-pointer hover:border-blue-300 transition">
+                    @for(opt of vehicleTypes(); track opt.value) {
+                      <option [value]="opt.value">{{opt.label}}</option>
+                    }
+                  </select>
+                  <span class="absolute right-2 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-sm pointer-events-none">expand_more</span>
+                </div>
 
                 <!-- Sort Dropdown -->
-                <select [ngModel]="sortBy()" (ngModelChange)="sortBy.set($event)"
-                        class="bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto">
-                  <option value="default">Sort by: Default</option>
-                  <option value="type">Type (A-Z)</option>
-                  <option value="speed_desc">Speed (High to Low)</option>
-                  <option value="fuel_asc">Fuel (Low to High)</option>
-                  <option value="status">Status (Active First)</option>
-                </select>
+                <div class="relative w-full sm:w-auto">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-sm pointer-events-none">sort</span>
+                  <select [ngModel]="sortBy()" (ngModelChange)="sortBy.set($event)"
+                          class="bg-white border border-slate-200 text-slate-700 rounded-lg pl-9 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full font-medium shadow-sm appearance-none cursor-pointer hover:border-blue-300 transition">
+                    <option value="default">Sort by: Default</option>
+                    <option value="type">Type (A-Z)</option>
+                    <option value="speed_desc">Speed (High to Low)</option>
+                    <option value="fuel_asc">Fuel (Low to High)</option>
+                    <option value="status">Status (Active First)</option>
+                  </select>
+                  <span class="absolute right-2 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-sm pointer-events-none">expand_more</span>
+                </div>
               </div>
             </div>
             
@@ -236,28 +246,36 @@ import { MapComponent } from './map.component';
                 <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
                   <tr>
                     <th class="px-6 py-3 font-semibold">Vehicle</th>
+                    <th class="px-6 py-3 font-semibold">Owner ID</th>
                     <th class="px-6 py-3 font-semibold">Status</th>
                     <th class="px-6 py-3 font-semibold">Speed</th>
                     <th class="px-6 py-3 font-semibold">Fuel</th>
+                    <th class="px-6 py-3 font-semibold">Last Updated</th>
                     <th class="px-6 py-3 font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                   @if (filteredVehicles().length === 0) {
                      <tr>
-                        <td colspan="5" class="px-6 py-10 text-center text-gray-400">
-                           No vehicles match your filter.
+                        <td colspan="7" class="px-6 py-10 text-center text-gray-400">
+                           <div class="flex flex-col items-center">
+                             <span class="material-icons text-4xl mb-2 opacity-30">filter_list_off</span>
+                             <span>No vehicles match your filter.</span>
+                           </div>
                         </td>
                      </tr>
                   }
                   @for (v of filteredVehicles(); track v.id) {
-                    <tr class="hover:bg-slate-50 transition">
+                    <tr class="hover:bg-slate-50 transition group">
                       <td class="px-6 py-4">
-                        <div class="font-medium text-slate-900">{{v.registration_number}}</div>
-                        <div class="text-xs text-slate-500">{{v.type}}</div>
+                        <div class="font-bold text-slate-900">{{v.registration_number}}</div>
+                        <div class="text-xs font-bold text-slate-500 bg-slate-100 inline-block px-1.5 py-0.5 rounded mt-1">{{v.type}}</div>
+                      </td>
+                      <td class="px-6 py-4 text-sm text-slate-500 font-mono">
+                         {{v.owner_id || '-'}}
                       </td>
                       <td class="px-6 py-4">
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold"
                           [class.bg-green-100]="v.status === 'Running'"
                           [class.text-green-800]="v.status === 'Running'"
                           [class.bg-yellow-100]="v.status === 'Idle'"
@@ -278,20 +296,23 @@ import { MapComponent } from './map.component';
                       </td>
                       <td class="px-6 py-4">
                         <div class="w-full bg-slate-200 rounded-full h-1.5 w-24">
-                          <div class="h-1.5 rounded-full" 
+                          <div class="h-1.5 rounded-full transition-all duration-500" 
                                [class.bg-blue-500]="v.fuel_level >= 20"
                                [class.bg-red-500]="v.fuel_level < 20"
                                [style.width.%]="v.fuel_level"></div>
                         </div>
-                        <span class="text-xs mt-1 block" 
+                        <span class="text-xs mt-1 block font-mono" 
                               [class.text-slate-400]="v.fuel_level >= 20"
                               [class.text-red-500]="v.fuel_level < 20"
                               [class.font-bold]="v.fuel_level < 20">
                           {{v.fuel_level}}%
                         </span>
                       </td>
+                      <td class="px-6 py-4 text-xs text-slate-500">
+                         {{v.last_updated | date:'mediumTime'}}
+                      </td>
                       <td class="px-6 py-4 text-sm">
-                        <button class="text-slate-400 hover:text-blue-600 transition">
+                        <button class="text-slate-400 hover:text-blue-600 transition p-2 hover:bg-blue-50 rounded-full">
                           <span class="material-icons text-base">visibility</span>
                         </button>
                       </td>
@@ -304,8 +325,10 @@ import { MapComponent } from './map.component';
 
           <!-- Live Map Preview -->
           <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[500px]">
-            <div class="p-4 border-b border-slate-100">
-              <h2 class="font-bold text-lg text-slate-800">Live Map</h2>
+            <div class="p-4 border-b border-slate-100 bg-slate-50">
+              <h2 class="font-bold text-lg text-slate-800 flex items-center gap-2">
+                <span class="material-icons text-blue-500">map</span> Live Map
+              </h2>
             </div>
             <div class="flex-1 bg-slate-100 relative">
                <app-map [center]="{lat: 20, lng: 78}" [markers]="mapMarkers()"></app-map>
@@ -315,14 +338,7 @@ import { MapComponent } from './map.component';
         </div>
       </div>
     </div>
-  `,
-  styles: [`
-    @keyframes fade-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-    .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
-    
-    @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-    .animate-slide-in { animation: slide-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-  `]
+  `
 })
 export class AdminDashboardComponent implements OnInit {
   auth = inject(AuthService);
@@ -347,10 +363,20 @@ export class AdminDashboardComponent implements OnInit {
   toasts = signal<{id: string, title: string, msg: string, type: 'warning'|'danger'}[]>([]);
   private notifiedAlertIds = new Set<string>();
 
-  // Computed: Unique Vehicle Types for Dropdown
+  // Computed: Unique Vehicle Types for Dropdown with Counts
   vehicleTypes = computed(() => {
-    const types = new Set(this.vehicles().map(v => v.type));
-    return ['All', ...Array.from(types).sort()];
+    const vs = this.vehicles();
+    const typeCounts = vs.reduce((acc, v) => {
+      acc[v.type] = (acc[v.type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const types = Object.keys(typeCounts).sort();
+    
+    return [
+      { label: `All Types (${vs.length})`, value: 'All' },
+      ...types.map(t => ({ label: `${t} (${typeCounts[t]})`, value: t }))
+    ];
   });
 
   // Computed: Filtered & Sorted List
